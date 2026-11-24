@@ -22,13 +22,7 @@ data "aws_iam_policy_document" "github_plan_assume_role" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:environment:${var.environment}"]
-    }
-
-    condition {
-      test     = "StringLike"
-      variable = "token.actions.githubusercontent.com:ref"
-      values   = ["refs/pull/*/merge"]
+      values   = ["repo:${var.github_repository}:pull_request"]
     }
   }
 }
