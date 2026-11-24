@@ -368,6 +368,31 @@ resource "aws_iam_role_policy" "ecs_task" {
   })
 }
 
+resource "aws_iam_role" "migration_task" {
+  name = "${var.environment}-graphql-migration-task"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "migration_task" {
+  name = "${var.environment}-graphql-migration-secret"
+  role = aws_iam_role.migration_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = local.database_secret_arn
+    }]
+  })
+}
+
 resource "aws_iam_role" "ecs_execution" {
   name = "${var.environment}-graphql-execution"
   assume_role_policy = jsonencode({
@@ -420,10 +445,10 @@ resource "aws_apigatewayv2_api" "graphql" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = [
-      "https://${aws_cloudfront_distribution.frontend.domain_name}",
+    allow_origins = var.enable_cloudfront ? [
+      "https://${aws_cloudfront_distribution.frontend[0].domain_name}",
       "http://localhost:5173"
-    ]
+    ] : ["http://localhost:5173"]
     allow_methods = ["GET", "POST", "OPTIONS"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 300
@@ -516,7 +541,7 @@ resource "aws_ecs_task_definition" "graphql" {
       { name = "PUBLISH_TASK_EVENT_FUNCTION_NAME", value = "${var.environment}-graphql-publish-task-event" },
       { name = "JWT_ISSUER", value = var.jwt_issuer_url },
       { name = "JWT_AUDIENCE", value = var.jwt_audience },
-      { name = "CORS_ORIGINS", value = "https://${aws_cloudfront_distribution.frontend.domain_name}" },
+      { name = "CORS_ORIGINS", value = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.frontend[0].domain_name}" : "http://localhost:5173" },
       { name = "DATABASE_SECRET_ARN", value = local.database_secret_arn },
       { name = "DB_HOST", value = local.database_endpoint }
     ]
@@ -534,6 +559,37 @@ resource "aws_ecs_task_definition" "graphql" {
       timeout     = 5
       retries     = 3
       startPeriod = 20
+    }
+  }])
+}
+
+resource "aws_ecs_task_definition" "migration" {
+  family                   = "${var.environment}-graphql-migration"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.migration_task.arn
+  container_definitions = jsonencode([{
+    name      = "db-migrate"
+    image     = "${aws_ecr_repository.graphql.repository_url}:${var.container_image_tag}"
+    essential = true
+    command   = ["node", "database/prisma/migrate.mjs"]
+    environment = [
+      { name = "NODE_ENV", value = "production" },
+      { name = "AWS_REGION", value = var.aws_region },
+      { name = "DATABASE_SECRET_ARN", value = local.database_secret_arn },
+      { name = "DB_HOST", value = local.database_endpoint },
+      { name = "DB_NAME", value = var.db_name }
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.ecs.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "migration"
+      }
     }
   }])
 }
@@ -603,6 +659,7 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
 }
 
 resource "aws_cloudfront_origin_access_control" "frontend" {
+  count                             = var.enable_cloudfront ? 1 : 0
   name                              = "${var.environment}-graphql-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
@@ -610,12 +667,13 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 }
 
 resource "aws_cloudfront_distribution" "frontend" {
+  count               = var.enable_cloudfront ? 1 : 0
   enabled             = true
   default_root_object = "index.html"
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "s3"
-    origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend[0].id
   }
   default_cache_behavior {
     target_origin_id       = "s3"
@@ -648,6 +706,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 }
 
 resource "aws_s3_bucket_policy" "frontend" {
+  count  = var.enable_cloudfront ? 1 : 0
   bucket = aws_s3_bucket.frontend.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -658,7 +717,7 @@ resource "aws_s3_bucket_policy" "frontend" {
       Resource  = "${aws_s3_bucket.frontend.arn}/*"
       Condition = {
         StringEquals = {
-          "AWS:SourceArn" = aws_cloudfront_distribution.frontend.arn
+          "AWS:SourceArn" = aws_cloudfront_distribution.frontend[0].arn
         }
       }
     }]

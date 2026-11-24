@@ -68,7 +68,7 @@ flowchart LR
 
 The HTTP API's VPC Link must target a Cloud Map service registered by the ECS service. Permit the VPC Link security group to reach the ECS task security group on the GraphQL container port; do not allow public ingress directly to ECS.
 
-The WebSocket message Lambda is an explicit protocol adapter: it must validate and execute the `graphql-transport-ws` operation against the GraphQL subscription schema, persist authorized operation state, and produce correctly shaped `next`, `error`, and `complete` messages. It must handle `connection_init`, acknowledgement, `subscribe`, ping/pong, and disconnect cleanup. API Gateway WebSocket only transports routed messages; it does not automatically implement GraphQL subscription semantics. Do not put bearer tokens in query strings, where they can leak through URL/access logs. Mutation Lambdas must invoke the publisher only after a successful database commit. The publisher must load matching authorized operations from durable state and send GraphQL execution results—not arbitrary task JSON. Do not use process-local Pub/Sub for cross-task delivery.
+The WebSocket message Lambda is an explicit `graphql-transport-ws` adapter. `$connect` only establishes transport; the browser sends its Cognito ID token in `connection_init`, where the Lambda verifies issuer, audience, signature, and subject against the Cognito JWKS before acknowledging and persisting the authenticated connection. It validates `taskChanged` subscription documents against the GraphQL schema, stores multiple operation IDs per connection, handles ping/pong, completion, duplicate initialization, and disconnect cleanup, and sends GraphQL execution results using `next`/`error` protocol messages. API Gateway WebSocket only transports routed messages; it does not automatically implement GraphQL subscription semantics. Do not put bearer tokens in query strings, where they can leak through URL/access logs. Mutation Lambdas invoke the publisher only after a successful database commit; the publisher selects subscribers for that verified user and executes each stored selection set against the event before delivery. Do not use process-local Pub/Sub for cross-task delivery.
 
 ## Why this design
 
@@ -86,14 +86,14 @@ The WebSocket message Lambda is an explicit protocol adapter: it must validate a
 - Prefer CloudFront caching and API Gateway HTTP API for modest/irregular public request volume. Set API throttles and payload limits. Compare it with ALB using expected requests, active connections, processed bytes, VPC Link hours, WebSocket connection minutes/messages, and Cloud Map usage in `ap-south-1`; do not assume one design is always cheaper.
 - Review the full `ap-south-1` estimate for HTTP API, VPC Link, Cloud Map, WebSocket messages/connection minutes, ECS, RDS, RDS Proxy (if retained), NAT, logging, and data transfer before provisioning.
 - Review NAT Gateway versus VPC endpoints. Both can add hourly/data-processing costs; preserve required private egress and do not trade away private ECS/RDS.
-- Make RDS Proxy conditional on the measured connection pattern and regional cost. If omitted, cap Lambda reserved concurrency and database pool sizes.
+- Make RDS Proxy conditional on the measured connection pattern and regional cost. If omitted, cap Lambda concurrency and database pool sizes. The current AWS account quota is 10 concurrent executions, so functions currently share that unreserved pool; configure per-function reservations only after the account quota is raised.
 - Set CloudWatch log retention explicitly, keep dev log volume controlled, and tear down disposable resources after evidence capture.
 - Use CloudFront caching for static assets. Keep `index.html` short-lived/revalidating and hashed assets long-lived.
 
 ### Scaling behavior
 
 - **ECS:** configure Application Auto Scaling for desired task count with a small dev minimum and a budgeted maximum. Scale using measured CPU/memory or request count; verify scale-out and scale-in.
-- **Lambda:** Lambda scales with demand; configure reserved concurrency to protect database capacity. Measure duration, errors, throttles, and concurrency.
+- **Lambda:** Lambda scales with demand within the account concurrency quota. The current 10-execution quota is shared across the platform functions; request a quota increase before assigning per-function reserved concurrency to protect database capacity. Measure duration, errors, throttles, and concurrency.
 - **RDS:** scale vertically and configure storage autoscaling where supported. Add read replicas only when measured read pressure and regional cost justify them. Multi-AZ is for availability, not read scaling.
 - **API Gateway:** applies managed request handling and configurable throttling/quotas; monitor 4xx/5xx, latency, throttles, and usage. It does not scale ECS or RDS by itself.
 - **High availability trade-off:** one ECS task and single-AZ RDS are cost-conscious dev settings, not resilient production settings. Production availability needs multiple ECS tasks across AZs and an appropriately available database, which costs more.

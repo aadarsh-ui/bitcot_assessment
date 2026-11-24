@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim AS base
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::Retries=2 \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 
 FROM base AS build
 WORKDIR /app
@@ -23,6 +23,7 @@ COPY --from=build --chown=app:app /app/backend/dist ./dist
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/packages/core/package.json ./packages/core/package.json
 COPY --from=build --chown=app:app /app/packages/core/dist ./packages/core/dist
+COPY --from=build --chown=app:app /app/database/prisma ./database/prisma
 USER app
 EXPOSE 4000
 CMD ["node","dist/server.js"]

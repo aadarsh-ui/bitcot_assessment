@@ -4,7 +4,8 @@
   "scripts": {
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
-    "deploy": "prisma migrate deploy"
+    "deploy": "prisma migrate deploy",
+    "test": "vitest run migrate.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

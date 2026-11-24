@@ -16,6 +16,10 @@ Parameters:
     Type: String
   DatabaseEndpoint:
     Type: String
+  JwtIssuer:
+    Type: String
+  JwtAudience:
+    Type: String
 
 Globals:
   Function:
@@ -58,6 +62,8 @@ Resources:
 
   WsConnectFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-ws-connect"
       CodeUri: .
@@ -65,11 +71,10 @@ Resources:
       Environment:
         Variables:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ConnectionsTable
   WsDisconnectFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-ws-disconnect"
       CodeUri: .
@@ -82,6 +87,8 @@ Resources:
             TableName: !Ref ConnectionsTable
   WsMessageFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-ws-message"
       CodeUri: .
@@ -90,9 +97,9 @@ Resources:
         Variables:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
           WS_MANAGEMENT_ENDPOINT: !Sub "https://${TaskWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+          JWT_ISSUER: !Ref JwtIssuer
+          JWT_AUDIENCE: !Ref JwtAudience
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ConnectionsTable
         - Statement:
             Effect: Allow
             Action: execute-api:ManageConnections
@@ -104,37 +111,58 @@ Resources:
       ApiId: !Ref TaskWebSocketApi
       RouteKey: $connect
       AuthorizationType: NONE
-      Target: !Sub "integrations/${WsConnectIntegration}"
+      Target: !Sub "integrations/${ConnectIntegration}"
   ConnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref TaskWebSocketApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WsConnectFunction.Arn}/invocations"
+  ConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WsConnectFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${TaskWebSocketApi}/*/$connect"
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref TaskWebSocketApi
       RouteKey: $disconnect
-      Target: !Sub "integrations/${WsDisconnectIntegration}"
+      Target: !Sub "integrations/${DisconnectIntegration}"
   DisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref TaskWebSocketApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WsDisconnectFunction.Arn}/invocations"
+  DisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WsDisconnectFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${TaskWebSocketApi}/*/$disconnect"
   MessageRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref TaskWebSocketApi
       RouteKey: $default
-      Target: !Sub "integrations/${WsMessageIntegration}"
+      Target: !Sub "integrations/${MessageIntegration}"
   MessageIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref TaskWebSocketApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WsMessageFunction.Arn}/invocations"
+  MessagePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WsMessageFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${TaskWebSocketApi}/*/$default"
   WebSocketDeployment:
     Type: AWS::ApiGatewayV2::Deployment
     DependsOn: [ConnectRoute, DisconnectRoute, MessageRoute]
@@ -149,16 +177,19 @@ Resources:
 
   GetTasksFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-get-tasks"
       CodeUri: .
       Handler: dist/get-tasks/handler.handler
-      ReservedConcurrentExecutions: 10
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Ref DatabaseSecretArn
   GetTaskFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-get-task"
       CodeUri: .
@@ -168,36 +199,41 @@ Resources:
             SecretArn: !Ref DatabaseSecretArn
   CreateTaskFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-create-task"
       CodeUri: .
       Handler: dist/create-task/handler.handler
-      ReservedConcurrentExecutions: 5
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Ref DatabaseSecretArn
   UpdateTaskFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-update-task"
       CodeUri: .
       Handler: dist/update-task/handler.handler
-      ReservedConcurrentExecutions: 5
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Ref DatabaseSecretArn
   DeleteTaskFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-delete-task"
       CodeUri: .
       Handler: dist/delete-task/handler.handler
-      ReservedConcurrentExecutions: 3
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Ref DatabaseSecretArn
   PublishTaskEventFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${Environment}-graphql-publish-task-event"
       CodeUri: .

@@ -75,3 +75,9 @@ variable "github_repository" {
   type    = string
   default = "example/graphql-serverless-platform"
 }
+
+variable "enable_cloudfront" {
+  type        = bool
+  default     = false
+  description = "Create the CloudFront distribution and OAC after AWS account verification"
+}

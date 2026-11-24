@@ -38,6 +38,10 @@ output "ecs_task_definition_family" {
   value = aws_ecs_task_definition.graphql.family
 }
 
+output "ecs_migration_task_definition_family" {
+  value = aws_ecs_task_definition.migration.family
+}
+
 output "graphql_api_endpoint" {
   value = "${aws_apigatewayv2_api.graphql.api_endpoint}/graphql"
 }
@@ -59,11 +63,11 @@ output "frontend_bucket_name" {
 }
 
 output "cloudfront_distribution_id" {
-  value = aws_cloudfront_distribution.frontend.id
+  value = var.enable_cloudfront ? aws_cloudfront_distribution.frontend[0].id : null
 }
 
 output "cloudfront_domain" {
-  value = aws_cloudfront_distribution.frontend.domain_name
+  value = var.enable_cloudfront ? aws_cloudfront_distribution.frontend[0].domain_name : null
 }
 
 output "sns_topic_arn" {

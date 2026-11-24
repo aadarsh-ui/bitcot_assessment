@@ -37,12 +37,18 @@ jobs:
           DATABASE_ENDPOINT: ${{ vars.DATABASE_ENDPOINT }}
           ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
           ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+          ECS_MIGRATION_TASK_DEFINITION_FAMILY: ${{ vars.ECS_MIGRATION_TASK_DEFINITION_FAMILY }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          ECS_SECURITY_GROUP_ID: ${{ vars.ECS_SECURITY_GROUP_ID }}
           FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
           CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
           GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
           GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
+          COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER }}
+          COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          COGNITO_REDIRECT_URI: ${{ vars.COGNITO_REDIRECT_URI }}
+          COGNITO_LOGOUT_URI: ${{ vars.COGNITO_LOGOUT_URI }}
         run: |
           set -euo pipefail
           missing=()
@@ -54,12 +60,18 @@ jobs:
           [[ -z "$DATABASE_ENDPOINT" ]] && missing+=(DATABASE_ENDPOINT)
           [[ -z "$ECR_REPOSITORY_URL" ]] && missing+=(ECR_REPOSITORY_URL)
           [[ -z "$ECS_TASK_DEFINITION_FAMILY" ]] && missing+=(ECS_TASK_DEFINITION_FAMILY)
+          [[ -z "$ECS_MIGRATION_TASK_DEFINITION_FAMILY" ]] && missing+=(ECS_MIGRATION_TASK_DEFINITION_FAMILY)
           [[ -z "$ECS_CLUSTER" ]] && missing+=(ECS_CLUSTER)
           [[ -z "$ECS_SERVICE" ]] && missing+=(ECS_SERVICE)
+          [[ -z "$ECS_SECURITY_GROUP_ID" ]] && missing+=(ECS_SECURITY_GROUP_ID)
           [[ -z "$FRONTEND_BUCKET" ]] && missing+=(FRONTEND_BUCKET)
           [[ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]] && missing+=(CLOUDFRONT_DISTRIBUTION_ID)
           [[ -z "$GRAPHQL_HTTP_URL" ]] && missing+=(GRAPHQL_HTTP_URL)
           [[ -z "$GRAPHQL_WS_URL" ]] && missing+=(GRAPHQL_WS_URL)
+          [[ -z "$COGNITO_ISSUER" ]] && missing+=(COGNITO_ISSUER)
+          [[ -z "$COGNITO_CLIENT_ID" ]] && missing+=(COGNITO_CLIENT_ID)
+          [[ -z "$COGNITO_REDIRECT_URI" ]] && missing+=(COGNITO_REDIRECT_URI)
+          [[ -z "$COGNITO_LOGOUT_URI" ]] && missing+=(COGNITO_LOGOUT_URI)
           if (( ${#missing[@]} )); then
             printf 'Missing required GitHub variables: %s\n' "${missing[*]}" >&2
             exit 1
@@ -74,27 +86,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci && npm run build --workspace lambdas
+      - run: npm ci && npm run generate --workspace database/prisma && npm run build --workspace lambdas
       - uses: aws-actions/setup-sam@v2
       - run: cd lambdas && sam validate --lint --template-file template.yaml && sam build --template-file template.yaml
-      - name: Deploy SAM functions
-        working-directory: lambdas
-        env:
-          PRIVATE_SUBNET_A: ${{ vars.APP_SUBNET_A_ID }}
-          PRIVATE_SUBNET_B: ${{ vars.APP_SUBNET_B_ID }}
-          LAMBDA_SECURITY_GROUP: ${{ vars.LAMBDA_SECURITY_GROUP_ID }}
-          DATABASE_SECRET_ARN: ${{ vars.DATABASE_SECRET_ARN }}
-          DATABASE_ENDPOINT: ${{ vars.DATABASE_ENDPOINT }}
-        run: |
-          set -euo pipefail
-          sam deploy --config-env dev --no-confirm-changeset \
-            --parameter-overrides \
-              Environment=dev \
-              PrivateSubnetA="$PRIVATE_SUBNET_A" \
-              PrivateSubnetB="$PRIVATE_SUBNET_B" \
-              LambdaSecurityGroup="$LAMBDA_SECURITY_GROUP" \
-              DatabaseSecretArn="$DATABASE_SECRET_ARN" \
-              DatabaseEndpoint="$DATABASE_ENDPOINT"
       - run: aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-south-1.amazonaws.com
       - name: Build and push backend image
         env:
@@ -104,6 +98,78 @@ jobs:
           set -euo pipefail
           docker build --provenance=true --tag "$ECR_REPOSITORY_URL:$IMAGE_TAG" -f backend/Dockerfile .
           docker push "$ECR_REPOSITORY_URL:$IMAGE_TAG"
+      - name: Run database migrations in private ECS task
+        env:
+          IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}
+          MIGRATION_TASK_DEFINITION_FAMILY: ${{ vars.ECS_MIGRATION_TASK_DEFINITION_FAMILY }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          APP_SUBNET_A_ID: ${{ vars.APP_SUBNET_A_ID }}
+          APP_SUBNET_B_ID: ${{ vars.APP_SUBNET_B_ID }}
+          ECS_SECURITY_GROUP_ID: ${{ vars.ECS_SECURITY_GROUP_ID }}
+        run: |
+          set -euo pipefail
+          TASK_DEFINITION=$(aws ecs describe-task-definition \
+            --task-definition "$MIGRATION_TASK_DEFINITION_FAMILY" \
+            --query taskDefinition \
+            --output json | jq --arg IMAGE "$IMAGE_URI" \
+            '.containerDefinitions[0].image=$IMAGE | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)')
+          TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$TASK_DEFINITION" \
+            --query taskDefinition.taskDefinitionArn \
+            --output text)
+          TASK_RESPONSE=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEFINITION_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$APP_SUBNET_A_ID,$APP_SUBNET_B_ID],securityGroups=[$ECS_SECURITY_GROUP_ID],assignPublicIp=DISABLED}" \
+            --region ap-south-1 \
+            --output json)
+          TASK_ARN=$(jq -r '.tasks[0].taskArn // empty' <<< "$TASK_RESPONSE")
+          if [[ -z "$TASK_ARN" ]]; then
+            jq -r '.failures[]? | "Migration task could not start: \(.reason) \(.detail // "")"' <<< "$TASK_RESPONSE" >&2
+            exit 1
+          fi
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" --region ap-south-1
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --region ap-south-1 \
+            --query "tasks[0].containers[?name=='db-migrate'].exitCode | [0]" \
+            --output text)
+          if [[ "$EXIT_CODE" != "0" ]]; then
+            aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+              --region ap-south-1 \
+              --query 'tasks[0].[stoppedReason,containers[0].reason]' --output text >&2
+            echo "Database migration task failed with exit code: $EXIT_CODE" >&2
+            exit 1
+          fi
+      - name: Deploy SAM functions
+        working-directory: lambdas
+        env:
+          PRIVATE_SUBNET_A: ${{ vars.APP_SUBNET_A_ID }}
+          PRIVATE_SUBNET_B: ${{ vars.APP_SUBNET_B_ID }}
+          LAMBDA_SECURITY_GROUP: ${{ vars.LAMBDA_SECURITY_GROUP_ID }}
+          DATABASE_SECRET_ARN: ${{ vars.DATABASE_SECRET_ARN }}
+          DATABASE_ENDPOINT: ${{ vars.DATABASE_ENDPOINT }}
+          JWT_ISSUER: ${{ vars.COGNITO_ISSUER }}
+          JWT_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          sam deploy --template-file .aws-sam/build/template.yaml \
+            --stack-name graphql-serverless-dev \
+            --region ap-south-1 \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --parameter-overrides \
+              Environment=dev \
+              PrivateSubnetA="$PRIVATE_SUBNET_A" \
+              PrivateSubnetB="$PRIVATE_SUBNET_B" \
+              LambdaSecurityGroup="$LAMBDA_SECURITY_GROUP" \
+              DatabaseSecretArn="$DATABASE_SECRET_ARN" \
+              DatabaseEndpoint="$DATABASE_ENDPOINT" \
+              JwtIssuer="$JWT_ISSUER" \
+              JwtAudience="$JWT_AUDIENCE"
       - name: Register immutable task revision
         env:
           IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}
@@ -134,6 +200,10 @@ jobs:
         env:
           VITE_GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
           VITE_GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
+          VITE_COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER }}
+          VITE_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          VITE_COGNITO_REDIRECT_URI: ${{ vars.COGNITO_REDIRECT_URI }}
+          VITE_COGNITO_LOGOUT_URI: ${{ vars.COGNITO_LOGOUT_URI }}
           FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
           CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |

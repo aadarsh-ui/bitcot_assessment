@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useSubscription } from "@apollo/client";
+import { useAuth } from "react-oidc-context";
 import { CREATE_TASK, DELETE_TASK, GET_TASKS, TASK_CHANGED, UPDATE_TASK } from "./graphql";
 
 type Task = {
@@ -10,6 +11,7 @@ type Task = {
 const empty = { title: "", description: "", priority: "MEDIUM", dueDate: "" };
 
 export default function App() {
+  const auth = useAuth();
   const { data, loading, error, refetch } = useQuery<{ getTasks: Task[] }>(GET_TASKS);
   const [createTask, createState] = useMutation(CREATE_TASK);
   const [updateTask] = useMutation(UPDATE_TASK);
@@ -66,10 +68,10 @@ export default function App() {
       <aside>
         <div className="brand"><span>✓</span> Taskflow</div>
         <nav><button className="active">Overview</button></nav>
-        <div className="profile"><div className="avatar">AU</div><div><strong>Assessment User</strong><small>Local workspace</small></div></div>
+        <div className="profile"><div className="avatar">AU</div><div><strong>{auth.user?.profile.email ?? "Signed in"}</strong><small>Authenticated account</small></div></div>
       </aside>
       <section className="content">
-        <header><div><p className="eyebrow">Workspace</p><h1>Good morning</h1></div><button className="primary" onClick={() => { setEditing(null); setForm(empty); document.getElementById("title")?.focus(); }}>+ New task</button></header>
+        <header><div><p className="eyebrow">Workspace</p><h1>Good morning</h1></div><div className="header-actions"><button className="secondary sign-out" onClick={() => void auth.signoutRedirect()}>Sign out</button><button className="primary" onClick={() => { setEditing(null); setForm(empty); document.getElementById("title")?.focus(); }}>+ New task</button></div></header>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
         <div className="stats">
           <article><span>All tasks</span><strong>{counts.all}</strong></article>
