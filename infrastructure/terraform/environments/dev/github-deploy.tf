@@ -154,6 +154,7 @@ data "aws_iam_policy_document" "github_deploy" {
     sid = "PushDevGraphqlImage"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
@@ -165,7 +166,6 @@ data "aws_iam_policy_document" "github_deploy" {
   statement {
     sid = "RegisterAndRunDevTasks"
     actions = [
-      "ecs:DescribeTaskDefinition",
       "ecs:RegisterTaskDefinition",
       "ecs:RunTask"
     ]
@@ -174,6 +174,12 @@ data "aws_iam_policy_document" "github_deploy" {
       "arn:${data.aws_partition.current.partition}:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${aws_ecs_task_definition.migration.family}:*",
       aws_ecs_cluster.main.arn
     ]
+  }
+
+  statement {
+    sid       = "DescribeDevTaskDefinitions"
+    actions   = ["ecs:DescribeTaskDefinition"]
+    resources = ["*"]
   }
 
   statement {

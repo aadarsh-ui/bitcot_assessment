@@ -93,14 +93,14 @@ jobs:
       - name: Build and push backend image
         env:
           ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           docker build --provenance=true --tag "$ECR_REPOSITORY_URL:$IMAGE_TAG" -f backend/Dockerfile .
           docker push "$ECR_REPOSITORY_URL:$IMAGE_TAG"
       - name: Run database migrations in private ECS task
         env:
-          IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}
+          IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           MIGRATION_TASK_DEFINITION_FAMILY: ${{ vars.ECS_MIGRATION_TASK_DEFINITION_FAMILY }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           APP_SUBNET_A_ID: ${{ vars.APP_SUBNET_A_ID }}
@@ -175,7 +175,7 @@ jobs:
               JwtAudience="$JWT_AUDIENCE"
       - name: Register immutable task revision
         env:
-          IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}
+          IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           ECS_SERVICE: ${{ vars.ECS_SERVICE }}
