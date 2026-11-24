@@ -1,0 +1,148 @@
+name: Deploy Development
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-dev-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci && npm run lint && npm run typecheck && npm test && npm run build
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          APP_SUBNET_A_ID: ${{ vars.APP_SUBNET_A_ID }}
+          APP_SUBNET_B_ID: ${{ vars.APP_SUBNET_B_ID }}
+          LAMBDA_SECURITY_GROUP_ID: ${{ vars.LAMBDA_SECURITY_GROUP_ID }}
+          DATABASE_SECRET_ARN: ${{ vars.DATABASE_SECRET_ARN }}
+          DATABASE_ENDPOINT: ${{ vars.DATABASE_ENDPOINT }}
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+          ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
+          GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "$AWS_DEPLOY_ROLE_ARN" ]] && missing+=(AWS_DEPLOY_ROLE_ARN)
+          [[ -z "$APP_SUBNET_A_ID" ]] && missing+=(APP_SUBNET_A_ID)
+          [[ -z "$APP_SUBNET_B_ID" ]] && missing+=(APP_SUBNET_B_ID)
+          [[ -z "$LAMBDA_SECURITY_GROUP_ID" ]] && missing+=(LAMBDA_SECURITY_GROUP_ID)
+          [[ -z "$DATABASE_SECRET_ARN" ]] && missing+=(DATABASE_SECRET_ARN)
+          [[ -z "$DATABASE_ENDPOINT" ]] && missing+=(DATABASE_ENDPOINT)
+          [[ -z "$ECR_REPOSITORY_URL" ]] && missing+=(ECR_REPOSITORY_URL)
+          [[ -z "$ECS_TASK_DEFINITION_FAMILY" ]] && missing+=(ECS_TASK_DEFINITION_FAMILY)
+          [[ -z "$ECS_CLUSTER" ]] && missing+=(ECS_CLUSTER)
+          [[ -z "$ECS_SERVICE" ]] && missing+=(ECS_SERVICE)
+          [[ -z "$FRONTEND_BUCKET" ]] && missing+=(FRONTEND_BUCKET)
+          [[ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]] && missing+=(CLOUDFRONT_DISTRIBUTION_ID)
+          [[ -z "$GRAPHQL_HTTP_URL" ]] && missing+=(GRAPHQL_HTTP_URL)
+          [[ -z "$GRAPHQL_WS_URL" ]] && missing+=(GRAPHQL_WS_URL)
+          if (( ${#missing[@]} )); then
+            printf 'Missing required GitHub variables: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: graphql-dev-deploy-${{ github.run_id }}
+      - run: aws sts get-caller-identity
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build --workspace lambdas
+      - uses: aws-actions/setup-sam@v2
+      - run: cd lambdas && sam validate --lint --template-file template.yaml && sam build --template-file template.yaml
+      - name: Deploy SAM functions
+        working-directory: lambdas
+        env:
+          PRIVATE_SUBNET_A: ${{ vars.APP_SUBNET_A_ID }}
+          PRIVATE_SUBNET_B: ${{ vars.APP_SUBNET_B_ID }}
+          LAMBDA_SECURITY_GROUP: ${{ vars.LAMBDA_SECURITY_GROUP_ID }}
+          DATABASE_SECRET_ARN: ${{ vars.DATABASE_SECRET_ARN }}
+          DATABASE_ENDPOINT: ${{ vars.DATABASE_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          sam deploy --config-env dev --no-confirm-changeset \
+            --parameter-overrides \
+              Environment=dev \
+              PrivateSubnetA="$PRIVATE_SUBNET_A" \
+              PrivateSubnetB="$PRIVATE_SUBNET_B" \
+              LambdaSecurityGroup="$LAMBDA_SECURITY_GROUP" \
+              DatabaseSecretArn="$DATABASE_SECRET_ARN" \
+              DatabaseEndpoint="$DATABASE_ENDPOINT"
+      - run: aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-south-1.amazonaws.com
+      - name: Build and push backend image
+        env:
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build --provenance=true --tag "$ECR_REPOSITORY_URL:$IMAGE_TAG" -f backend/Dockerfile .
+          docker push "$ECR_REPOSITORY_URL:$IMAGE_TAG"
+      - name: Register immutable task revision
+        env:
+          IMAGE_URI: ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}
+          TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+        run: |
+          set -euo pipefail
+          TASK_DEFINITION=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_DEFINITION_FAMILY" \
+            --query taskDefinition \
+            --output json | jq --arg IMAGE "$IMAGE_URI" \
+            '.containerDefinitions[0].image=$IMAGE | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)')
+          TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$TASK_DEFINITION" \
+            --query taskDefinition.taskDefinitionArn \
+            --output text)
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$TASK_DEFINITION_ARN" \
+            --region ap-south-1
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --region ap-south-1
+      - name: Build and deploy frontend
+        env:
+          VITE_GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
+          VITE_GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
+          FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          npm run build --workspace frontend
+          aws s3 sync frontend/dist/ "s3://$FRONTEND_BUCKET/" --delete \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp frontend/dist/index.html "s3://$FRONTEND_BUCKET/index.html" \
+            --cache-control "public,max-age=0,must-revalidate"
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "/index.html"

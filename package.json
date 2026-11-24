@@ -1,0 +1,14 @@
+{
+  "name": "graphql-serverless-platform",
+  "private": true,
+  "workspaces": ["frontend", "backend", "packages/core", "lambdas", "database/prisma"],
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspace backend",
+    "frontend": "npm run dev --workspace frontend"
+  },
+  "engines": { "node": ">=22" }
+}

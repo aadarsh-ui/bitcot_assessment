@@ -1,0 +1,8 @@
+version = 0.1
+
+[dev]
+[dev.deploy.parameters]
+stack_name = "graphql-serverless-dev"
+region = "ap-south-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true

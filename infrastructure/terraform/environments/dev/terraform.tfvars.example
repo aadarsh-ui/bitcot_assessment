@@ -1,0 +1,17 @@
+aws_region   = "ap-south-1"
+environment  = "dev"
+vpc_cidr     = "10.20.0.0/16"
+db_name      = "task_platform"
+
+# Replace with the selected OIDC provider's issuer and API audience.
+jwt_issuer_url = "https://issuer.example.invalid/"
+jwt_audience   = "graphql-task-platform"
+
+# Keep RDS Proxy off unless connection/load testing justifies its cost.
+enable_rds_proxy = false
+
+# Dev defaults: one task minimum, two maximum.
+ecs_min_capacity = 1
+ecs_max_capacity = 2
+
+github_repository = "YOUR_ORG/YOUR_REPOSITORY"
