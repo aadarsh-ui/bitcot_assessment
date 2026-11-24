@@ -73,7 +73,7 @@ variable "jwt_audience" {
 
 variable "github_repository" {
   type    = string
-  default = "example/graphql-serverless-platform"
+  default = "aadarsh-ui/bitcot_assessment"
 }
 
 variable "enable_cloudfront" {

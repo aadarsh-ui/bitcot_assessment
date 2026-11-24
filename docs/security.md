@@ -6,4 +6,5 @@
 - The RDS-managed credential is stored in Secrets Manager, encrypted with KMS, and not embedded in Terraform state; runtime roles retrieve it by ARN.
 - S3 is private and CloudFront uses OAC.
 - GitHub Actions uses OIDC, never static AWS access keys.
+- The deployment role is limited to trusted deployment refs. Terraform pull-request checks run formatting and validation without AWS credentials; infrastructure plans run only in a trusted environment.
 - ECS containers run as a non-root user and CloudWatch logs expire after 7 days in dev.

@@ -4,13 +4,13 @@ This tracker reflects the **original assessment PDF**. “Design documented” i
 
 | Requirement | Target component | Current status |
 |---|---|---|
-| React frontend interacts with GraphQL API | React/Apollo frontend and HTTPS GraphQL endpoint | Frontend source exists; AWS frontend is not uploaded and authenticated end-to-end verification is pending |
-| Cost-optimized frontend with caching, access control, SSL | Private S3 + CloudFront OAC + TLS/cache policies | Private S3 bucket exists; CloudFront is disabled and the bucket is empty |
-| Multiple TypeScript/Node.js Lambdas for GraphQL operations | SAM CRUD, publisher, and WebSocket handlers | Nine Node.js 22 functions and WebSocket API are deployed; read-only Lambda-to-RDS query passed; GraphQL/WebSocket acceptance tests pending |
-| Private GraphQL server on ECS Fargate | Apollo ECS service in private subnets, API Gateway/VPC Link/Cloud Map ingress | Terraform resources are deployed and ECS has one running task; authenticated API smoke test and evidence capture pending |
-| Private PostgreSQL RDS, reachable by ECS and Lambda | RDS/private subnets/security groups; both application paths | Private RDS is available; Lambda database query passed; ECS database readiness still needs live verification |
-| Integrate Lambda, GraphQL, and RDS for operations | ECS invokes SAM; Lambda uses Prisma/RDS | Lambda-to-RDS read test passed; deployed GraphQL CRUD and subscription flow still needs end-to-end verification |
-| GitHub Actions CI/CD | PR checks, OIDC dev deployment, protected prod gate | Workflow files exist; OIDC deployment workflow and production promotion remain unverified |
+| React frontend interacts with GraphQL API | React/Apollo frontend and HTTPS GraphQL endpoint | Authenticated local frontend successfully queried, created, and deleted a task through deployed GraphQL; AWS frontend is not uploaded |
+| Cost-optimized frontend with caching, access control, SSL | Private S3 + CloudFront OAC + TLS/cache policies | Private S3 bucket exists and is empty; CloudFront creation is blocked until AWS verifies the account |
+| Multiple TypeScript/Node.js Lambdas for GraphQL operations | SAM CRUD, publisher, and WebSocket handlers | Nine Node.js 22 functions are deployed; Lambda-to-RDS query passed; authenticated browser subscription received create/delete events; broader protocol coverage and evidence capture remain |
+| Private GraphQL server on ECS Fargate | Apollo ECS service in private subnets, API Gateway/VPC Link/Cloud Map ingress | Terraform resources are deployed and ECS has one healthy task; authenticated GraphQL query and mutations passed; unauthenticated requests return 401; evidence capture pending |
+| Private PostgreSQL RDS, reachable by ECS and Lambda | RDS/private subnets/security groups; both application paths | Private RDS is available; Lambda query passed; ECS readiness probe now runs a database query and the deployed task is healthy |
+| Integrate Lambda, GraphQL, and RDS for operations | ECS invokes SAM; Lambda uses Prisma/RDS | Lambda-to-RDS read test passed; authenticated browser create/delete flow and live subscription events passed; full CRUD/ownership tests and evidence capture pending |
+| GitHub Actions CI/CD | PR checks, OIDC dev deployment, protected prod gate | Local CI checks pass; GitHub OIDC provider and scoped deploy/CloudFormation roles are deployed and verified; required GitHub `dev` Environment variables and a successful deployment run remain; production promotion is unverified |
 | CloudWatch Logs/Metrics/Alarms and alerts | CloudWatch + SNS | Terraform alarms/dashboard and Lambda log groups are deployed; SNS delivery test pending |
 | IAM roles, access control, secrets | Least-privilege roles, verified JWT identity, Secrets Manager/KMS | RDS-managed secret and Lambda access are deployed; review policies and verify authenticated runtime paths |
 | Secure environment variable/secret management | Runtime Secrets Manager retrieval and GitHub variables | Lambda secret retrieval succeeded as part of the read query; GitHub deployment variables and leakage scan remain |
