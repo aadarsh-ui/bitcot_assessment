@@ -77,3 +77,11 @@ output "sns_topic_arn" {
 output "github_deploy_role_arn" {
   value = aws_iam_role.github_deploy.arn
 }
+
+output "github_cloudformation_role_arn" {
+  value = aws_iam_role.github_cloudformation.arn
+}
+
+output "sam_artifacts_bucket" {
+  value = aws_s3_bucket.sam_artifacts.id
+}

@@ -143,7 +143,7 @@ Do not mark this target complete until evidence demonstrates:
 - **Recovery:** preserve previous immutable image/task definition, Lambda version, and frontend artifact. Stop promotion on failed smoke tests. Roll back application artifacts without assuming database migrations can be automatically reversed; use backward-compatible expand/contract migrations and tested backups.
 - **Cost-aware scaling:** cap dev ECS desired count, set Lambda concurrency to the database's safe connection budget, and do not add RDS replicas until metrics justify the spend. Scale ECS/Lambda independently; RDS requires planned vertical/storage changes or deliberate replica/availability configuration.
 
-This traceability is a **design mapping, not completion evidence**. The design includes every assessment category, but infrastructure and deployment paths still require validation and deployment; in particular, WebSocket handlers are not yet a complete GraphQL protocol adapter. Do not mark requirements complete until their tests and deployment evidence exist. The selected no-ALB ingress is an engineering choice: the original PDF does not require ALB or API Gateway specifically.
+This traceability is a **design mapping, not completion evidence**. The authenticated browser flow has verified task reads, create/delete mutations, and live `taskChanged` events. WebSocket handlers currently support that subscription, not a general-purpose GraphQL subscription adapter; broader protocol tests and evidence are still required. Other infrastructure and deployment paths also require their listed validation. The selected no-ALB ingress is an engineering choice: the original PDF does not require ALB or API Gateway specifically.
 
 ## References
 

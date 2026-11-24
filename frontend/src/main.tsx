@@ -16,6 +16,12 @@ const logoutUri = import.meta.env.VITE_COGNITO_LOGOUT_URI ?? `${window.location.
 const httpUrl = import.meta.env.VITE_GRAPHQL_HTTP_URL ?? "http://localhost:4000/graphql";
 const wsUrl = import.meta.env.VITE_GRAPHQL_WS_URL ?? "ws://localhost:4000/graphql";
 
+class ApiGatewayWebSocket extends WebSocket {
+  constructor(url: string | URL, _protocols?: string | string[]) {
+    super(url);
+  }
+}
+
 function AuthenticationGate() {
   const auth = useAuth();
   const token = auth.user?.id_token;
@@ -29,6 +35,7 @@ function AuthenticationGate() {
     }));
     const wsClient = createClient({
       url: wsUrl,
+      webSocketImpl: ApiGatewayWebSocket,
       connectionParams: { Authorization: `Bearer ${token}` }
     });
     const wsLink = new GraphQLWsLink(wsClient);

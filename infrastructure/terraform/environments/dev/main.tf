@@ -4,6 +4,12 @@ data "aws_availability_zones" "available" {
 
 data "aws_caller_identity" "current" {}
 
+data "aws_partition" "current" {}
+
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
@@ -115,7 +121,6 @@ resource "aws_route_table_association" "db_b" {
 resource "aws_security_group" "api_gateway_vpc_link" {
   name   = "${var.environment}-graphql-vpc-link"
   vpc_id = aws_vpc.main.id
-  egress = []
 }
 
 resource "aws_vpc_security_group_egress_rule" "vpc_link_to_ecs" {
@@ -129,7 +134,6 @@ resource "aws_vpc_security_group_egress_rule" "vpc_link_to_ecs" {
 resource "aws_security_group" "ecs" {
   name   = "${var.environment}-graphql-ecs"
   vpc_id = aws_vpc.main.id
-  egress = []
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ecs_from_vpc_link" {
@@ -149,7 +153,6 @@ resource "aws_vpc_security_group_egress_rule" "ecs_all" {
 resource "aws_security_group" "lambda" {
   name   = "${var.environment}-graphql-lambda"
   vpc_id = aws_vpc.main.id
-  egress = []
 }
 
 resource "aws_vpc_security_group_egress_rule" "lambda_all" {
@@ -491,6 +494,13 @@ resource "aws_apigatewayv2_route" "graphql" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+resource "aws_apigatewayv2_route" "graphql_preflight" {
+  api_id             = aws_apigatewayv2_api.graphql.id
+  route_key          = "OPTIONS /{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.graphql.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_apigatewayv2_stage" "graphql" {
   api_id      = aws_apigatewayv2_api.graphql.id
   name        = "$default"
@@ -554,7 +564,7 @@ resource "aws_ecs_task_definition" "graphql" {
       }
     }
     healthCheck = {
-      command     = ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      command     = ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval    = 30
       timeout     = 5
       retries     = 3
@@ -670,6 +680,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   count               = var.enable_cloudfront ? 1 : 0
   enabled             = true
   default_root_object = "index.html"
+  price_class         = "PriceClass_200"
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "s3"
@@ -678,6 +689,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   default_cache_behavior {
     target_origin_id       = "s3"
     viewer_protocol_policy = "redirect-to-https"
+    compress               = true
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
     forwarded_values {
@@ -697,6 +709,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
   viewer_certificate {
     cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1.2_2021"
   }
   custom_error_response {
     error_code         = 404
@@ -907,7 +920,7 @@ data "aws_iam_policy_document" "github_oidc" {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
     condition {
       test     = "StringEquals"

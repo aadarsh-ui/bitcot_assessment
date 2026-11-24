@@ -30,6 +30,8 @@ jobs:
       - name: Validate deployment configuration
         env:
           AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          CLOUDFORMATION_EXECUTION_ROLE_ARN: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE_ARN }}
+          SAM_ARTIFACT_BUCKET: ${{ vars.SAM_ARTIFACT_BUCKET }}
           APP_SUBNET_A_ID: ${{ vars.APP_SUBNET_A_ID }}
           APP_SUBNET_B_ID: ${{ vars.APP_SUBNET_B_ID }}
           LAMBDA_SECURITY_GROUP_ID: ${{ vars.LAMBDA_SECURITY_GROUP_ID }}
@@ -41,8 +43,6 @@ jobs:
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           ECS_SERVICE: ${{ vars.ECS_SERVICE }}
           ECS_SECURITY_GROUP_ID: ${{ vars.ECS_SECURITY_GROUP_ID }}
-          FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
-          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
           GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
           GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
           COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER }}
@@ -53,6 +53,8 @@ jobs:
           set -euo pipefail
           missing=()
           [[ -z "$AWS_DEPLOY_ROLE_ARN" ]] && missing+=(AWS_DEPLOY_ROLE_ARN)
+          [[ -z "$CLOUDFORMATION_EXECUTION_ROLE_ARN" ]] && missing+=(CLOUDFORMATION_EXECUTION_ROLE_ARN)
+          [[ -z "$SAM_ARTIFACT_BUCKET" ]] && missing+=(SAM_ARTIFACT_BUCKET)
           [[ -z "$APP_SUBNET_A_ID" ]] && missing+=(APP_SUBNET_A_ID)
           [[ -z "$APP_SUBNET_B_ID" ]] && missing+=(APP_SUBNET_B_ID)
           [[ -z "$LAMBDA_SECURITY_GROUP_ID" ]] && missing+=(LAMBDA_SECURITY_GROUP_ID)
@@ -64,8 +66,6 @@ jobs:
           [[ -z "$ECS_CLUSTER" ]] && missing+=(ECS_CLUSTER)
           [[ -z "$ECS_SERVICE" ]] && missing+=(ECS_SERVICE)
           [[ -z "$ECS_SECURITY_GROUP_ID" ]] && missing+=(ECS_SECURITY_GROUP_ID)
-          [[ -z "$FRONTEND_BUCKET" ]] && missing+=(FRONTEND_BUCKET)
-          [[ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]] && missing+=(CLOUDFRONT_DISTRIBUTION_ID)
           [[ -z "$GRAPHQL_HTTP_URL" ]] && missing+=(GRAPHQL_HTTP_URL)
           [[ -z "$GRAPHQL_WS_URL" ]] && missing+=(GRAPHQL_WS_URL)
           [[ -z "$COGNITO_ISSUER" ]] && missing+=(COGNITO_ISSUER)
@@ -153,13 +153,16 @@ jobs:
           DATABASE_ENDPOINT: ${{ vars.DATABASE_ENDPOINT }}
           JWT_ISSUER: ${{ vars.COGNITO_ISSUER }}
           JWT_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
+          CLOUDFORMATION_EXECUTION_ROLE_ARN: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE_ARN }}
+          SAM_ARTIFACT_BUCKET: ${{ vars.SAM_ARTIFACT_BUCKET }}
         run: |
           set -euo pipefail
           sam deploy --template-file .aws-sam/build/template.yaml \
             --stack-name graphql-serverless-dev \
             --region ap-south-1 \
             --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
+            --s3-bucket "$SAM_ARTIFACT_BUCKET" \
+            --role-arn "$CLOUDFORMATION_EXECUTION_ROLE_ARN" \
             --no-confirm-changeset \
             --parameter-overrides \
               Environment=dev \
@@ -197,6 +200,7 @@ jobs:
             --services "$ECS_SERVICE" \
             --region ap-south-1
       - name: Build and deploy frontend
+        if: ${{ vars.FRONTEND_BUCKET != '' && vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
         env:
           VITE_GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
           VITE_GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
@@ -216,3 +220,6 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
             --paths "/index.html"
+      - name: Skip frontend deployment until CloudFront is available
+        if: ${{ vars.FRONTEND_BUCKET == '' || vars.CLOUDFRONT_DISTRIBUTION_ID == '' }}
+        run: echo "Frontend deployment skipped; configure FRONTEND_BUCKET and CLOUDFRONT_DISTRIBUTION_ID after CloudFront is available."
