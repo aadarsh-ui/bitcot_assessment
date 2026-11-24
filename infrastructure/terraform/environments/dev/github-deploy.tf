@@ -4,39 +4,6 @@ locals {
   github_cloudformation_role_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-graphql-cloudformation-deploy"
 }
 
-data "aws_iam_policy_document" "github_plan_assume_role" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:pull_request"]
-    }
-  }
-}
-
-resource "aws_iam_role" "github_plan" {
-  name               = "${var.environment}-graphql-github-plan"
-  assume_role_policy = data.aws_iam_policy_document.github_plan_assume_role.json
-}
-
-resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
-  role       = aws_iam_role.github_plan.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/ReadOnlyAccess"
-}
-
 resource "aws_s3_bucket" "sam_artifacts" {
   bucket = local.sam_artifacts_bucket_name
 }
