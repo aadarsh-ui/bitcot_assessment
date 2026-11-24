@@ -40,6 +40,12 @@ resource "aws_iam_role" "github_cloudformation" {
 
 data "aws_iam_policy_document" "github_cloudformation" {
   statement {
+    sid       = "DescribeVpcSubnetsForLambdaConfiguration"
+    actions   = ["ec2:DescribeSubnets"]
+    resources = ["*"]
+  }
+
+  statement {
     sid       = "CreateSamTransformChangeSets"
     actions   = ["cloudformation:CreateChangeSet"]
     resources = ["arn:${data.aws_partition.current.partition}:cloudformation:${var.aws_region}:aws:transform/Serverless-2016-10-31"]
