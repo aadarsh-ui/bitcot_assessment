@@ -12,6 +12,7 @@
    | Variable | Source |
    | --- | --- |
    | `AWS_DEPLOY_ROLE_ARN` | Terraform output `github_deploy_role_arn` |
+   | `AWS_PLAN_ROLE_ARN` | Terraform output `github_plan_role_arn`; read-only role used by same-repository pull request plans |
    | `CLOUDFORMATION_EXECUTION_ROLE_ARN` | Terraform output `github_cloudformation_role_arn` |
    | `SAM_ARTIFACT_BUCKET` | Terraform output `sam_artifacts_bucket` |
    | `APP_SUBNET_A_ID`, `APP_SUBNET_B_ID` | First and second IDs from `app_subnet_ids` |
@@ -28,7 +29,7 @@
    | `COGNITO_CLIENT_ID` | Cognito public SPA app client ID |
    | `COGNITO_REDIRECT_URI`, `COGNITO_LOGOUT_URI` | Allowed CloudFront HTTPS URL ending in `/` |
 
-   The workflow checks that required variables are present before deployment. `FRONTEND_BUCKET` and `CLOUDFRONT_DISTRIBUTION_ID` are optional; the frontend deploy is skipped until both are configured. CloudFront is currently blocked by AWS account verification. The GitHub deploy role trusts the repository's `main` branch/dev environment and receives narrowly scoped ECR, ECS, CloudFormation, artifact-bucket, and role-passing permissions from Terraform. CloudFormation uses a separate execution role to manage only the SAM resources. The GitHub OIDC provider must exist before applying Terraform. The frontend is built from the root npm workspace install; do not run `npm ci` in `frontend` because it has no standalone lockfile.
+   The workflow checks that required variables are present before deployment. `FRONTEND_BUCKET` and `CLOUDFRONT_DISTRIBUTION_ID` are optional; the frontend deploy is skipped until both are configured. CloudFront is currently blocked by AWS account verification. The GitHub deploy role trusts the repository's `main` branch/dev environment and receives narrowly scoped ECR, ECS, CloudFormation, artifact-bucket, and role-passing permissions from Terraform. Pull-request Terraform plans use a separate read-only role, restricted to this repository's `dev` environment and pull-request refs; forked pull requests do not receive AWS credentials. CloudFormation uses a separate execution role to manage only the SAM resources. The GitHub OIDC provider must exist before applying Terraform. The frontend is built from the root npm workspace install; do not run `npm ci` in `frontend` because it has no standalone lockfile.
 
 The local frontend Cognito configuration is documented in `frontend/.env.example`. Copy it to `frontend/.env.local` for local work, and keep the callback and sign-out URLs registered in the Cognito app client. The app uses Cognito OIDC authorization-code flow and sends the ID token as a bearer token; never expose or commit a client secret. The WebSocket `$connect` route accepts transport connections without credentials; the message Lambda verifies the ID token from `connection_init` before it acknowledges the protocol connection or stores subscription state.
 
