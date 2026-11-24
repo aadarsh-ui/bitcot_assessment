@@ -928,13 +928,9 @@ data "aws_iam_policy_document" "github_oidc" {
       values   = ["sts.amazonaws.com"]
     }
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:aadarsh-ui@126157583/bitcot_assessment@1470168053:environment:${var.environment}",
-        "repo:${var.github_repository}:environment:${var.environment}",
-        "repo:${var.github_repository}:ref:refs/heads/main"
-      ]
+      values   = ["repo:aadarsh-ui@126157583/bitcot_assessment@1470168053:environment:${var.environment}"]
     }
   }
 }

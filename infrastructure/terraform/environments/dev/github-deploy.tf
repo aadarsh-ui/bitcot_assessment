@@ -40,8 +40,8 @@ resource "aws_iam_role" "github_cloudformation" {
 
 data "aws_iam_policy_document" "github_cloudformation" {
   statement {
-    sid       = "DescribeVpcSubnetsForLambdaConfiguration"
-    actions   = ["ec2:DescribeSubnets"]
+    sid       = "DescribeVpcResourcesForLambdaConfiguration"
+    actions   = ["ec2:DescribeSecurityGroups", "ec2:DescribeSubnets"]
     resources = ["*"]
   }
 
@@ -245,6 +245,7 @@ data "aws_iam_policy_document" "github_deploy" {
       "cloudformation:DescribeStacks",
       "cloudformation:ExecuteChangeSet",
       "cloudformation:GetTemplate",
+      "cloudformation:GetTemplateSummary",
       "cloudformation:ListStackResources"
     ]
     resources = [
