@@ -154,6 +154,7 @@ data "aws_iam_policy_document" "github_deploy" {
     sid = "PushDevGraphqlImage"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
