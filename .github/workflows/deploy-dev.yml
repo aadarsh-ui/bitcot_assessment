@@ -18,7 +18,7 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci && npm run lint && npm run typecheck && npm test && npm run build
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/oidc-claims-debug')
     needs: validate
     runs-on: ubuntu-latest
     environment: dev
@@ -76,6 +76,22 @@ jobs:
             printf 'Missing required GitHub variables: %s\n' "${missing[*]}" >&2
             exit 1
           fi
+      - name: Diagnose OIDC claims (temporary)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const payload = token.split('.')[1];
+            if (!payload) {
+              throw new Error('GitHub returned an invalid OIDC token');
+            }
+            const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+            core.info(JSON.stringify({
+              iss: claims.iss,
+              aud: claims.aud,
+              sub: claims.sub
+            }));
+            core.setFailed('Temporary diagnostic only: stop before AWS authentication.');
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
