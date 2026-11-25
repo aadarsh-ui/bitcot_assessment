@@ -302,9 +302,15 @@ resource "aws_iam_role_policy" "github_amplify" {
         Resource = aws_amplify_app.frontend[0].arn
       },
       {
+        Sid      = "CreateDevAmplifyFrontendDeployment"
+        Effect   = "Allow"
+        Action   = ["amplify:CreateDeployment"]
+        Resource = "${aws_amplify_branch.frontend[0].arn}/deployments/*"
+      },
+      {
         Sid      = "DeployDevAmplifyFrontendBranch"
         Effect   = "Allow"
-        Action   = ["amplify:CreateDeployment", "amplify:GetBranch", "amplify:StartDeployment"]
+        Action   = ["amplify:GetBranch", "amplify:StartDeployment"]
         Resource = aws_amplify_branch.frontend[0].arn
       },
       {
