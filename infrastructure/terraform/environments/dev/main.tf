@@ -811,6 +811,26 @@ resource "aws_cloudwatch_metric_alarm" "api_gateway_5xx" {
   period              = 60
   statistic           = "Sum"
   threshold           = 5
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    ApiId = aws_apigatewayv2_api.graphql.id
+    Stage = aws_apigatewayv2_stage.graphql.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_gateway_latency" {
+  alarm_name          = "${var.environment}-graphql-api-latency"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  metric_name         = "Latency"
+  namespace           = "AWS/ApiGateway"
+  period              = 60
+  extended_statistic  = "p95"
+  threshold           = 2000
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "API Gateway p95 latency exceeded 2 seconds for 3 consecutive minutes."
   alarm_actions       = [aws_sns_topic.alerts.arn]
   dimensions = {
     ApiId = aws_apigatewayv2_api.graphql.id
@@ -842,6 +862,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   period              = 60
   statistic           = "Sum"
   threshold           = 1
+  treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   dimensions = {
     FunctionName = each.value
@@ -858,6 +879,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
   period              = 60
   statistic           = "Sum"
   threshold           = 1
+  treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   dimensions = {
     FunctionName = each.value
@@ -941,6 +963,38 @@ resource "aws_cloudwatch_dashboard" "main" {
             ["AWS/ApiGateway", "5xx", "ApiId", aws_apigatewayv2_api.graphql.id, "Stage", aws_apigatewayv2_stage.graphql.name],
             ["AWS/ApiGateway", "Latency", "ApiId", aws_apigatewayv2_api.graphql.id, "Stage", aws_apigatewayv2_stage.graphql.name]
           ]
+          period = 60
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          title  = "GraphQL API p95 latency"
+          region = var.aws_region
+          metrics = [
+            ["AWS/ApiGateway", "Latency", "ApiId", aws_apigatewayv2_api.graphql.id, "Stage", aws_apigatewayv2_stage.graphql.name, { stat = "p95" }]
+          ]
+          period = 60
+          yAxis = {
+            left = { label = "Milliseconds" }
+          }
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          title  = "Lambda invocations and errors"
+          region = var.aws_region
+          metrics = concat(
+            [
+              for name in sort(tolist(local.lambda_function_names)) :
+              ["AWS/Lambda", "Invocations", "FunctionName", name]
+            ],
+            [
+              for name in sort(tolist(local.lambda_function_names)) :
+              ["AWS/Lambda", "Errors", "FunctionName", name]
+            ]
+          )
           period = 60
         }
       },
