@@ -1,6 +1,6 @@
 # GraphQL Serverless Task Platform
 
-AWS assessment implementation for a React task-management application built with Apollo GraphQL on ECS Fargate, AWS Lambda, RDS PostgreSQL/Proxy, Terraform, AWS SAM, and GitHub Actions.
+Dev-only AWS assessment implementation for a React task-management application built with Apollo GraphQL on ECS Fargate, AWS Lambda, RDS PostgreSQL, Terraform, AWS SAM, and GitHub Actions.
 
 ## Architecture
 
@@ -10,10 +10,12 @@ AWS assessment implementation for a React task-management application built with
 - Separate TypeScript Lambda CRUD and WebSocket handlers deployed with SAM
 - RDS PostgreSQL (RDS Proxy enabled only if its measured connection benefit justifies the cost)
 - Prisma migrations and ownership enforcement
-- Private S3 origin and CloudFront with OAC
+- AWS Amplify Hosting with HTTPS and managed CDN/cache
 - CloudWatch, SNS, and GitHub OIDC
 
-See [the recommended assessment architecture](docs/architecture.md) for the no-ALB design, request/event flows, scaling approach, cost controls, and acceptance evidence. Terraform configures API Gateway HTTP API → VPC Link → Cloud Map → private ECS. Infrastructure still requires `terraform validate` and a reviewed plan before applying in AWS.
+See the [deployed architecture](docs/architecture.md) and [submission guide](docs/submission.md). The development deployment uses API Gateway HTTP API → VPC Link → Cloud Map → private ECS. GitHub Actions deploys to dev only; production deployment is not configured.
+
+Detailed guides: [deployment/testing](docs/deployment.md), [CI/CD](docs/ci-cd.md), [security/IAM](docs/security.md), [database/secrets](docs/database.md), [monitoring](docs/monitoring.md), and [rollback](docs/rollback.md).
 
 ## Local setup
 

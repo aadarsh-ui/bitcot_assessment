@@ -1,43 +1,72 @@
-# Deployment
+# Development Deployment and Testing
 
-1. Review the budget and compare the complete `ap-south-1` costs for API Gateway HTTP API, VPC Link, Cloud Map, WebSocket API, NAT/VPC endpoints, ECS, RDS, optional RDS Proxy, and Amplify Hosting. Direct CloudFront creation is blocked pending AWS account verification. Amplify Hosting is deployed as the cost-conscious static hosting alternative and uses its managed CDN.
-2. Provide `jwt_issuer_url` and `jwt_audience` for the assessment's approved OIDC provider. Keep all credentials out of Terraform variables and source; configure the database secret securely.
-3. Bootstrap and review the Terraform state bucket if a remote backend is used.
-4. Run `terraform fmt`, `validate`, and review the cost/security implications of `terraform plan`; inspect replacements, hourly resources, public ingress, and IAM changes.
-5. To avoid an ECS task trying to pull an image before one exists, first apply only `aws_ecr_repository.graphql`, build the backend image, and push the immutable `bootstrap` tag. Then apply the reviewed full Terraform plan. ECS service creation starts at one task, and deployment workflows register later task-definition revisions with commit-SHA image tags.
-6. Build/push an immutable ECS image tag. The workflow runs `prisma migrate deploy` as a one-off Fargate task in private app subnets before deploying SAM or updating ECS. The migration task reads the RDS-managed credential from Secrets Manager using a dedicated task role and reuses the ECS-to-database security-group path.
-7. Generate the Prisma client before building SAM (`npm run generate --workspace database/prisma`); the SAM Makefile packages that generated client and the Lambda ARM64 engine into each function artifact. Lambda artifacts use ESM because `jose` is ESM-only. The browser WebSocket client omits the HTTP subprotocol header because API Gateway WebSocket does not negotiate it; the `graphql-transport-ws` messages are still used after the connection opens. The message Lambda role needs table-scoped DynamoDB access and `execute-api:ManageConnections` on the stage's connection-management methods (POST and DELETE). Deploy the built template with `sam build` and `sam deploy --template-file .aws-sam/build/template.yaml --config-env dev`, then register a new application task-definition revision and update the ECS service. ECS container health now uses `/ready`, which runs a database query; verify the deployed task health and authenticated GraphQL through the API Gateway URL.
-8. Configure these GitHub `dev` Environment variables from Terraform/SAM outputs:
+## Environment
 
-   | Variable | Source |
-   | --- | --- |
-   | `AWS_DEPLOY_ROLE_ARN` | Terraform output `github_deploy_role_arn` |
-   | `CLOUDFORMATION_EXECUTION_ROLE_ARN` | Terraform output `github_cloudformation_role_arn` |
-   | `SAM_ARTIFACT_BUCKET` | Terraform output `sam_artifacts_bucket` |
-   | `APP_SUBNET_A_ID`, `APP_SUBNET_B_ID` | First and second IDs from `app_subnet_ids` |
-   | `LAMBDA_SECURITY_GROUP_ID` | Terraform output `lambda_security_group_id` |
-   | `DATABASE_SECRET_ARN`, `DATABASE_ENDPOINT` | Terraform outputs of the same names |
-   | `ECR_REPOSITORY_URL` | Terraform output `ecr_repository_url` |
-   | `ECS_TASK_DEFINITION_FAMILY` | Terraform output `ecs_task_definition_family` |
-   | `ECS_MIGRATION_TASK_DEFINITION_FAMILY` | Terraform output `ecs_migration_task_definition_family` |
-   | `ECS_CLUSTER`, `ECS_SERVICE` | Terraform outputs `ecs_cluster_name`, `ecs_service_name` |
-   | `ECS_SECURITY_GROUP_ID` | Terraform output `ecs_security_group_id` |
-   | `GRAPHQL_HTTP_URL` | Terraform output `graphql_api_endpoint` |
-   | `GRAPHQL_WS_URL` | SAM output `WebSocketUrl` |
-   | `COGNITO_ISSUER` | Cognito user pool issuer URL |
-   | `COGNITO_CLIENT_ID` | Cognito public SPA app client ID |
-   | `AMPLIFY_APP_ID` | Terraform output `amplify_app_id` |
-   | `AMPLIFY_BRANCH` | Terraform output `amplify_branch_name` (normally `main`) |
+The assessment deployment is a single AWS development environment in `ap-south-1`. Terraform provisions infrastructure and SAM/CloudFormation manages the Lambda/WebSocket stack. Production deployment is intentionally not configured.
 
-   The workflow checks that required variables are present, derives the Cognito callback/logout URL from the Amplify app, then uploads the React build ZIP through Amplify's manual deployment API and waits for completion. Register `https://main.<Amplify app default domain>/` in Cognito's callback and sign-out URL lists. Terraform configures immutable caching for hashed assets, revalidation for `index.html`, SPA routing, API CORS, and scoped Amplify deployment permissions. The GitHub deploy role trusts the repository's `main` branch/dev environment and receives narrowly scoped ECR, ECS, CloudFormation, artifact-bucket, Amplify, and role-passing permissions from Terraform. The environment trust condition must match the GitHub OIDC `sub` claim; this repository uses the customized subject `repo:aadarsh-ui@126157583/bitcot_assessment@1470168053:environment:dev`. Pull-request checks run Terraform formatting and validation without AWS credentials; review infrastructure plans before applying. CloudFormation uses a separate execution role to manage only the SAM resources. The GitHub OIDC provider must exist before applying Terraform. The frontend is built from the root npm workspace install; do not run `npm ci` in `frontend` because it has no standalone lockfile.
+## Automated deployment
 
-The local frontend Cognito configuration is documented in `frontend/.env.example`. Copy it to `frontend/.env.local` for local work, and keep the callback and sign-out URLs registered in the Cognito app client. The app uses Cognito OIDC authorization-code flow and sends the ID token as a bearer token; never expose or commit a client secret. The WebSocket `$connect` route accepts transport connections without credentials; the message Lambda verifies the ID token from `connection_init` before it acknowledges the protocol connection or stores subscription state.
+The GitHub Actions workflow [deploy-dev.yml](../.github/workflows/deploy-dev.yml) runs validation for pull requests and pushes. The deploy job runs only for a push to `main`, uses the protected `dev` GitHub Environment, and assumes the AWS deploy role with GitHub OIDC.
 
-The backend image includes the Prisma schema and migration history. For manual database initialization, use the `dev-graphql-migration` ECS task definition and run it with Fargate in the private app subnets, the ECS security group, and `assignPublicIp=DISABLED`. Check the task's exit code and `/ecs/dev-graphql-api` migration log stream before deploying application traffic. The GitHub workflow performs this one-off task for each deploy before SAM and ECS updates.
-9. Amplify serves the frontend over HTTPS with managed CDN caching. Verify the response cache headers and SPA deep links after deployment.
+The deployment sequence is:
 
-Use immutable image tags and preserve ECS task-definition revisions. Production promotion requires the protected `production` GitHub Environment.
+1. Install dependencies and run lint, typecheck, tests, and build.
+2. Generate Prisma client and build/validate the SAM template.
+3. Build the backend image with the commit SHA as an immutable ECR tag and push it.
+4. Register and run the database migration as a one-off Fargate task in private application subnets; stop if it fails.
+5. Deploy the Lambda and WebSocket stack with SAM, passing the secret ARN and non-secret configuration.
+6. Register an ECS task definition using the immutable image tag, update the service, and wait until the service is stable.
+7. Build the React frontend with public API/Cognito configuration, upload it to Amplify, start deployment, and wait for `SUCCEED`.
 
-The ECS service uses API Gateway HTTP API → VPC Link → Cloud Map SRV service discovery; ECS tasks remain private. The JWT-protected `$default` route handles GraphQL requests. An explicit unauthenticated `OPTIONS /{proxy+}` route forwards browser preflights to the backend CORS middleware; keep the allowed origins restricted to configured frontend origins. Enable RDS Proxy only if connection testing justifies the additional cost (`enable_rds_proxy = true`); when disabled, ECS/Lambda connect directly to RDS within their restricted security groups.
+## Required GitHub `dev` Environment variables
 
-The HTTP API uses a JWT authorizer. Set the required issuer and audience Terraform inputs to the same values the GraphQL service validates. The WebSocket API has separate `graphql-transport-ws` authentication and must be tested independently.
+Configure these values from Terraform/SAM outputs or the Cognito configuration. They are identifiers and configuration, not secret credentials.
+
+| Variable | Purpose/source |
+|---|---|
+| `AWS_DEPLOY_ROLE_ARN` | Terraform GitHub OIDC role output |
+| `CLOUDFORMATION_EXECUTION_ROLE_ARN` | Terraform CloudFormation role output |
+| `SAM_ARTIFACT_BUCKET` | Terraform SAM artifact bucket output |
+| `APP_SUBNET_A_ID`, `APP_SUBNET_B_ID` | Private application subnet IDs |
+| `LAMBDA_SECURITY_GROUP_ID`, `ECS_SECURITY_GROUP_ID` | Workload security groups |
+| `DATABASE_SECRET_ARN` | RDS-managed Secrets Manager ARN |
+| `DATABASE_ENDPOINT` | RDS endpoint |
+| `ECR_REPOSITORY_URL` | Terraform ECR repository output |
+| `ECS_TASK_DEFINITION_FAMILY`, `ECS_MIGRATION_TASK_DEFINITION_FAMILY` | ECS task-definition families |
+| `ECS_CLUSTER`, `ECS_SERVICE` | ECS cluster and service names |
+| `GRAPHQL_HTTP_URL`, `GRAPHQL_WS_URL` | API Gateway HTTP and WebSocket endpoints |
+| `COGNITO_ISSUER`, `COGNITO_CLIENT_ID` | Cognito user-pool issuer and public SPA client ID |
+| `AMPLIFY_APP_ID`, `AMPLIFY_BRANCH` | Amplify Hosting app and branch identifiers |
+
+Never put the database password or other runtime secret values in GitHub variables, workflow YAML, Terraform variables, container images, or frontend build variables. GitHub Actions receives AWS access through OIDC and passes only the secret ARN to deployment resources.
+
+## Manual infrastructure workflow
+
+Run Terraform from `infrastructure/terraform/environments/dev`:
+
+```bash
+terraform init
+terraform fmt -check
+terraform validate
+terraform plan
+```
+
+Review the plan for replacements, deletions, public ingress, IAM scope, and recurring cost before applying. Do not use a broad apply to change production or unrelated resources. Terraform backend configuration and required variables must be set for the target AWS account before running these commands.
+
+## Verification checklist
+
+- GitHub Actions validation and dev deployment jobs finish successfully.
+- ECS service has the desired number of running tasks and rollout state `COMPLETED`.
+- SAM/CloudFormation stack is `*_COMPLETE`; no failed migration task.
+- Amplify deployment job reaches `SUCCEED`.
+- Hosted React app loads over HTTPS; Cognito sign-in works.
+- Authenticated GraphQL query and task mutations work; anonymous GraphQL requests are rejected.
+- Subscription receives the expected event and stale connections are cleaned up.
+- Lambda-to-RDS operation and ECS database readiness check work.
+- CloudWatch dashboard, alarm states, log retention, and SNS notification path are reviewed.
+
+Capture sanitized screenshots or command outputs for the submission. Do not include secret values, ID tokens, or personally identifiable information.
+
+## Local development
+
+See the root [README](../README.md) for installing dependencies and running the local application with Docker Compose. Use `.env.example` files as templates; do not commit local `.env` files.

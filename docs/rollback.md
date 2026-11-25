@@ -1,22 +1,29 @@
-# Rollback
+# Rollback and Recovery
 
-## What is automated and verified
+## ECS: automatic deployment rollback
 
-- **ECS:** the deployment circuit breaker is enabled. A controlled failing revision was tested; ECS returned to the prior healthy task-definition revision. If a failed deployment does not restore service automatically, update the service to the last known-good task-definition revision and wait for the service to become stable.
-- **SAM/Lambda:** CloudFormation rolls back a stack update that fails before completion. Lambda functions do not currently use published versions or aliases, so a successful but faulty release does not have instant alias rollback.
-- **Amplify:** the workflow waits for Amplify deployment completion and fails if it reports failure. The pipeline does not retain a separately managed prior build artifact for automatic restoration.
+The ECS service deployment circuit breaker is enabled with rollback. It was tested using an intentionally missing ECR image tag. ECS failed to start the new task and returned the service to its previous healthy task definition. The current dev service is healthy with one running task and a completed rollout.
 
-## Recovery for a successful but faulty application release
+If a real deployment fails:
 
-The current practical rollback is a source-controlled redeployment:
+1. Check ECS service events and the deployment rollout reason.
+2. Confirm the circuit breaker returned to the previous task definition and the service is steady.
+3. If necessary, update the ECS service to the last known-good task-definition revision and wait for stability.
+4. Validate `/ready` and authenticated GraphQL operations before closing the incident.
 
-1. Identify the last known-good commit from the successful GitHub Actions run.
-2. Revert the faulty commit on `main` (do not force-push shared history).
-3. Let the normal validated `main` workflow rebuild and deploy both SAM/Lambda and the frontend; ECS uses the image built from that reverted commit.
-4. Verify the GraphQL health/auth path, authenticated task operations, ECS steady state, and Amplify deployment result.
+## SAM/Lambda and frontend
 
-This is a manual recovery procedure, not an automated cross-service rollback. Automated Lambda alias promotion and frontend artifact promotion/restore remain future improvements.
+CloudFormation rolls back a SAM stack update that fails before stack completion. Lambda functions do not currently use published versions/aliases with automated traffic shifting. Amplify deployment failure is surfaced by the workflow, but a successful faulty frontend build is not automatically restored from a retained artifact.
+
+For a successful but faulty Lambda or frontend release, the current recovery is manual:
+
+1. Identify the last known-good commit from GitHub Actions.
+2. Revert the faulty commit on `main` without rewriting shared history.
+3. Allow the validated development workflow to redeploy.
+4. Verify GraphQL auth/CRUD, subscription behavior, ECS health, and Amplify deployment status.
+
+This is manual source rollback and redeployment, not automatic cross-service rollback. Lambda alias promotion and frontend artifact promotion/restore remain future work.
 
 ## Database migrations
 
-Application rollback does not automatically reverse database migrations. Use backward-compatible expand/contract migrations, take/verify backups before destructive schema changes, and roll forward or restore from a backup if a migration cannot be safely reversed. Do not assume the previous application image is compatible with a destructive schema change.
+Application rollback does not reverse database migrations. Use backward-compatible expand/contract changes. Before destructive schema operations, verify a current backup and a tested restore path; if the prior application cannot use the migrated schema, roll forward or restore the database deliberately.

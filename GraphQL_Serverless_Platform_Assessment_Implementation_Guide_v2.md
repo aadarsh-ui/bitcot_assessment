@@ -11,16 +11,19 @@ with RDS Integration\
 **Infrastructure as Code:** Terraform\
 **Lambda packaging/deployment:** AWS SAM\
 **Container platform:** Amazon ECS on AWS Fargate\
-**Frontend hosting:** Amazon S3 + CloudFront\
+**Frontend hosting:** AWS Amplify Hosting (deployed); S3 + CloudFront is an unselected design option\
 **CI/CD:** GitHub Actions using GitHub OIDC\
 **Document purpose:** Build instructions, implementation plan,
 verification guide, and assessment traceability.
 
-> **Important status statement:** This document is an implementation
-> guide. It does not mean that the application, AWS resources,
-> pipelines, alarms, or rollback mechanisms have already been created.
-> Mark a requirement complete only after implementing it and capturing
-> the evidence described here.
+> **Status notice:** This is the original planning/reference guide, not
+> an as-built description. Some target choices below (including direct
+> S3/CloudFront hosting and production deployment) were not selected.
+> The deployed dev architecture, verified status, deployment steps, and
+> limitations are documented in [docs/architecture.md](docs/architecture.md),
+> [docs/assessment-tracker.md](docs/assessment-tracker.md), and the
+> linked operational runbooks. Use those docs as the submission source
+> of truth.
 
 ------------------------------------------------------------------------
 
@@ -390,8 +393,7 @@ graphql-serverless-platform/
 ├── .github/workflows/
 │   ├── pull-request.yml
 │   ├── terraform-plan.yml
-│   ├── deploy-dev.yml
-│   └── deploy-prod.yml
+│   └── deploy-dev.yml
 ├── docs/
 │   ├── architecture.md
 │   ├── deployment.md

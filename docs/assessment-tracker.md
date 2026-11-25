@@ -1,22 +1,27 @@
 # Assessment Completion Tracker
 
-This tracker reflects the **original assessment PDF**. “Design documented” is not the same as implemented, deployed, or verified.
+This tracker distinguishes implementation, deployment, and verification. The assessed deployment is dev-only; there is no production deployment workflow.
 
-| Requirement | Target component | Current status |
+| Requirement | Implementation / evidence | Status |
 |---|---|---|
-| React frontend interacts with GraphQL API | React/Apollo frontend and HTTPS GraphQL endpoint | Hosted in Amplify; authenticated browser CRUD and GraphQL subscriptions passed; anonymous HTTP GraphQL requests return 401 |
-| Cost-conscious AWS frontend with caching, access control, SSL | AWS Amplify Hosting, Cognito OIDC, HTTPS, CDN caching | Amplify HTTPS is live; immutable assets and revalidating HTML use the expected cache headers; authenticated app/API access verified. Custom domain is optional |
-| Multiple TypeScript/Node.js Lambdas for GraphQL operations | SAM CRUD, publisher, and WebSocket handlers | Nine Node.js 22 functions are deployed; Lambda-to-RDS query passed; authenticated browser create/update/delete and live subscription events passed. Stale-connection handling fix is merged and deployed |
-| Private GraphQL server on ECS Fargate | Apollo ECS service in private subnets, API Gateway/VPC Link/Cloud Map ingress | Terraform resources are deployed and ECS has one healthy task; authenticated GraphQL query and mutations passed; unauthenticated requests return 401; evidence capture pending |
-| Private PostgreSQL RDS, reachable by ECS and Lambda | RDS/private subnets/security groups; both application paths | Private RDS is available; Lambda query passed; ECS readiness probe now runs a database query and the deployed task is healthy |
-| Integrate Lambda, GraphQL, and RDS for operations | ECS invokes SAM; Lambda uses Prisma/RDS | Lambda-to-RDS read passed; authenticated browser create/update/delete flow and live subscription events passed; test record was removed |
-| GitHub Actions CI/CD | PR checks, OIDC dev deployment, frontend/backend deployment | GitHub Actions validates, tests, builds, and deploys SAM Lambdas, ECS, and Amplify to dev; latest main deployment succeeded. No production deployment is configured |
-| CloudWatch Logs/Metrics/Alarms and alerts | CloudWatch + SNS | Dashboard and alarms are deployed; SNS test notification was delivered; all nine Lambda logs have 14-day retention. The stale WebSocket `GoneException` fix is deployed. API p95 latency alarm and missing-data handling are applied; the latency alarm currently has `INSUFFICIENT_DATA` because no recent metric data is available. |
-| IAM roles, access control, secrets | Least-privilege roles, verified JWT identity, Secrets Manager/KMS | Dev ECS/Lambda/GitHub OIDC permissions and secret access were checked; intended actions were allowed and unrelated actions denied in the tested simulations |
-| Secure environment variable/secret management | Runtime Secrets Manager retrieval and GitHub variables | Database credentials are retrieved from Secrets Manager at runtime; GitHub uses OIDC and configuration identifiers rather than stored AWS keys or database passwords |
-| ECS, Lambda, RDS scaling strategy | ECS autoscaling, Lambda concurrency, RDS measured scaling | ECS autoscaling (1–2 tasks) was exercised out and back in; account Lambda concurrency is 10 shared executions; RDS storage autoscaling is configured, with no read replicas or instance-class autoscaling |
-| Rollback to stable version | ECS rollback, Lambda version/alias, frontend artifact restore | ECS circuit-breaker rollback was verified and SAM rolls back failed stack updates. For successful but faulty Lambda/frontend releases, documented recovery is a source revert and redeployment. Automated Lambda alias rollback and frontend artifact restoration are not configured. |
-| Architecture diagram | `docs/architecture.md` | Target diagram exists; reconcile with deployed infrastructure |
-| Detailed deployment/security/CI/CD/database/monitoring/rollback docs | `docs/` runbooks | Documents exist; update to match verified deployment before submission |
+| React frontend + GraphQL | React/Apollo hosted on Amplify; HTTPS and Cognito; authenticated operations verified | Implemented and deployed |
+| Cost-conscious hosting, caching, access control, TLS | Amplify managed hosting/CDN, Cognito, hashed-asset caching and HTML revalidation | Implemented and deployed; custom domain not configured |
+| TypeScript/Node.js Lambda operations | Nine SAM-managed Node.js functions for CRUD, event publishing, and WebSocket routes | Deployed; Lambda-to-RDS operation verified |
+| Private GraphQL server | Apollo on ECS Fargate behind API Gateway, VPC Link, and Cloud Map; tasks have no public IP | Deployed; current ECS rollout healthy |
+| Private RDS and connectivity | PostgreSQL in private DB subnets; ECS and Lambda connectivity; readiness query | Deployed and verified |
+| Lambda/GraphQL/RDS integration | ECS invokes operation Lambdas; Lambda uses Prisma/RDS | Authenticated operations and subscription delivery verified |
+| GitHub Actions CI/CD | PR validation; `main` dev deployment via OIDC; migrations, SAM, ECS, and Amplify | Dev workflow completed successfully; production workflow is not configured |
+| CloudWatch monitoring and alerts | Dashboard, 24 alarms, SNS action; Lambda log retention | Deployed; last check all alarms `OK`; SNS test delivery previously verified |
+| IAM and secret management | GitHub OIDC; workload roles; RDS-managed Secrets Manager secret and automatic rotation | Verified; secret ARN only passed through deployment, value fetched at runtime |
+| Scaling | ECS Application Auto Scaling; Lambda concurrency subject to account quota; RDS storage/capacity decisions | Configured/documented; production-scale/load test not performed |
+| Rollback strategy | ECS circuit breaker rollback drill; CloudFormation rollback on failed stack update | ECS rollback verified; automatic successful-release Lambda/frontend rollback is not configured |
+| Architecture diagram | [Deployed architecture](./architecture.md) | Documented |
+| Detailed documentation | Deployment, CI/CD, security, database, monitoring, rollback runbooks | Documented; use [submission guide](./submission.md) |
+| Loom walkthrough | Presenter outline and checklist | Record and attach before submission |
 
-The dev ECS/RDS/Terraform and SAM resources are deployed. The dev CI/CD path and authenticated application flows have been verified. This is a single dev environment; production deployment is not implemented. Do not describe manual source-revert recovery as automated rollback.
+## Remaining before submission
+
+- Capture current, sanitized screenshots/CLI output for the deployed app, healthy ECS service, private RDS, Secrets Manager metadata (not the secret value), alarms/dashboard, and successful workflow.
+- Record a Loom walkthrough using [loom-demo-script.md](./loom-demo-script.md), then add its share link to the submission email.
+- Provide the repository URL and ensure the final intended branch/PRs are merged before sending.
+- Clearly state the scope is dev-only. Do not claim production deployment, Lambda alias rollback, or frontend artifact rollback.

@@ -1,15 +1,26 @@
-# Monitoring
+# Monitoring and Alerts
 
-The target no-ALB design monitors API Gateway HTTP/WebSocket APIs, ECS, Lambda, and RDS with CloudWatch Logs, Metrics, Dashboards, and Alarms; SNS delivers actionable alerts. Configure an SNS email subscription out-of-band.
+The dev environment uses CloudWatch Logs, metrics, alarms, and a dashboard. CloudWatch alarm actions publish to an SNS topic; an SNS email subscription is managed outside Terraform and should be confirmed for the recipient account.
 
-Required signals:
+## Monitored services
 
-- API Gateway: request count, latency, 4xx/5xx, throttles, and integration failures.
-- ECS/Fargate: CPU, memory, desired/running task count, deployment failures, and service events.
-- Lambda: invocations, errors, duration, throttles, and concurrent executions.
-- RDS: connections, CPU, free storage, freeable memory, and read/write latency.
-- Application logs: structured timestamp, level, service, environment, request ID, operation, duration, and safe error code. Never log credentials, tokens, database URLs, or sensitive payloads.
+- **API Gateway:** HTTP API 5xx and p95 latency. The latency alarm threshold is 2 seconds across three one-minute periods.
+- **Lambda:** errors and throttles for the nine application functions.
+- **ECS:** CPU utilization and running-task health.
+- **RDS:** CPU utilization and database connections.
+- **Logs:** Lambda logs have 14-day retention; ECS application logs use the Terraform-configured retention.
+- **Dashboard:** API errors/latency, ECS CPU, RDS connections/CPU, and Lambda invocations/errors.
 
-Set thresholds using a measured baseline and database connection budget. The dev Terraform config adds an API Gateway p95 latency alarm at 2 seconds sustained for 3 one-minute periods; adjust this threshold from observed traffic baselines. The alarm is deployed and currently reports `INSUFFICIENT_DATA` because no recent API latency datapoints are available; this is not evidence of an active latency breach. Test at least one development alarm and record SNS delivery. The development deploy workflow creates missing SAM Lambda log groups and applies 14-day retention to all nine. Creating groups explicitly is necessary because Lambda normally creates a group's log group only on first invocation.
+Alarms send notifications to the dev SNS topic. Low-traffic API and Lambda alarms treat missing data as non-breaching to avoid idle functions remaining in `INSUFFICIENT_DATA`. This behavior does not suppress actual breaching datapoints. At the last verification, all 24 dev alarms were `OK`; the latency alarm had a recent non-breaching datapoint.
 
-The WebSocket message-error alarm fired during authenticated subscription testing because API Gateway returned `GoneException` (HTTP 410) when the client had already closed a connection before the server could send its acknowledgement. This is a stale-connection condition, not a failed task operation. The WebSocket handlers now remove the stale connection record and treat that response as expected; other delivery errors still fail visibly. Lambda error/throttle alarms treat missing data as non-breaching so idle functions do not remain in `INSUFFICIENT_DATA`; deployed alarms now report `OK` when no errors or throttles are observed.
+## WebSocket stale connections
+
+API Gateway can return `GoneException` (HTTP 410) when a client disconnects before a server acknowledgement or event delivery. The WebSocket handlers remove stale connection records and treat that response as an expected disconnect. Other delivery errors continue to surface.
+
+## Operations checklist
+
+1. Inspect the CloudWatch dashboard and current alarm state.
+2. For `ALARM`, read the alarm reason and correlated service logs before changing thresholds.
+3. Confirm SNS has an active subscription and test notification delivery in dev.
+4. Do not interpret `INSUFFICIENT_DATA` on an idle metric as proof of health; check whether datapoints are expected and inspect service health separately.
+5. Never include secret values, bearer tokens, or full database URLs in logs or screenshots.
