@@ -3,6 +3,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
 import { executeTaskSubscription } from "../shared/task-subscription.js";
+import { isGoneException } from "../shared/websocket-errors.js";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -44,7 +45,7 @@ export async function handler(event: TaskEvent, context: Context) {
           }));
           delivered += 1;
         } catch (error) {
-          if (error instanceof Error && error.name === "GoneException") {
+          if (isGoneException(error)) {
             await client.send(new DeleteCommand({ TableName: tableName, Key: { connectionId: item.connectionId } }));
             break;
           }

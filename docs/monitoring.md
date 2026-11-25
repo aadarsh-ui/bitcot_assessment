@@ -10,4 +10,6 @@ Required signals:
 - RDS: connections, CPU, free storage, freeable memory, and read/write latency.
 - Application logs: structured timestamp, level, service, environment, request ID, operation, duration, and safe error code. Never log credentials, tokens, database URLs, or sensitive payloads.
 
-Set thresholds using a measured baseline and database connection budget. Test at least one development alarm and record SNS delivery. Terraform now defines API Gateway, ECS, Lambda, and RDS alarms, but SNS delivery and metric availability must be verified after deployment.
+Set thresholds using a measured baseline and database connection budget. Test at least one development alarm and record SNS delivery. The updated development deploy workflow will apply 14-day retention to all nine SAM Lambda log groups after the scoped IAM permission is applied.
+
+The WebSocket message-error alarm fired during authenticated subscription testing because API Gateway returned `GoneException` (HTTP 410) when the client had already closed a connection before the server could send its acknowledgement. This is a stale-connection condition, not a failed task operation. The WebSocket handlers now remove the stale connection record and treat that response as expected; other delivery errors still fail visibly. Verify the alarm returns to `OK` after the updated Lambdas are deployed and fresh evaluation datapoints arrive.
