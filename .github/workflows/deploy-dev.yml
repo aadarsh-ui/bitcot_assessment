@@ -164,6 +164,7 @@ jobs:
             --s3-bucket "$SAM_ARTIFACT_BUCKET" \
             --role-arn "$CLOUDFORMATION_EXECUTION_ROLE_ARN" \
             --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
             --parameter-overrides \
               Environment=dev \
               PrivateSubnetA="$PRIVATE_SUBNET_A" \
