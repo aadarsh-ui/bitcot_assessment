@@ -76,3 +76,9 @@ variable "enable_cloudfront" {
   default     = false
   description = "Create the CloudFront distribution and OAC after AWS account verification"
 }
+
+variable "enable_amplify" {
+  type        = bool
+  default     = true
+  description = "Create AWS Amplify Hosting for the React frontend"
+}

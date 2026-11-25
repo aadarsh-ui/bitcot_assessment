@@ -47,8 +47,8 @@ jobs:
           GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
           COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER }}
           COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
-          COGNITO_REDIRECT_URI: ${{ vars.COGNITO_REDIRECT_URI }}
-          COGNITO_LOGOUT_URI: ${{ vars.COGNITO_LOGOUT_URI }}
+          AMPLIFY_APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          AMPLIFY_BRANCH: ${{ vars.AMPLIFY_BRANCH }}
         run: |
           set -euo pipefail
           missing=()
@@ -70,8 +70,8 @@ jobs:
           [[ -z "$GRAPHQL_WS_URL" ]] && missing+=(GRAPHQL_WS_URL)
           [[ -z "$COGNITO_ISSUER" ]] && missing+=(COGNITO_ISSUER)
           [[ -z "$COGNITO_CLIENT_ID" ]] && missing+=(COGNITO_CLIENT_ID)
-          [[ -z "$COGNITO_REDIRECT_URI" ]] && missing+=(COGNITO_REDIRECT_URI)
-          [[ -z "$COGNITO_LOGOUT_URI" ]] && missing+=(COGNITO_LOGOUT_URI)
+          [[ -z "$AMPLIFY_APP_ID" ]] && missing+=(AMPLIFY_APP_ID)
+          [[ -z "$AMPLIFY_BRANCH" ]] && missing+=(AMPLIFY_BRANCH)
           if (( ${#missing[@]} )); then
             printf 'Missing required GitHub variables: %s\n' "${missing[*]}" >&2
             exit 1
@@ -180,13 +180,23 @@ jobs:
           TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          AMPLIFY_APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          AMPLIFY_BRANCH: ${{ vars.AMPLIFY_BRANCH }}
         run: |
           set -euo pipefail
+          AMPLIFY_DOMAIN=$(aws amplify get-app \
+            --app-id "$AMPLIFY_APP_ID" \
+            --region ap-south-1 \
+            --query 'app.defaultDomain' \
+            --output text)
+          FRONTEND_ORIGIN="https://${AMPLIFY_BRANCH}.${AMPLIFY_DOMAIN}"
           TASK_DEFINITION=$(aws ecs describe-task-definition \
             --task-definition "$TASK_DEFINITION_FAMILY" \
             --query taskDefinition \
-            --output json | jq --arg IMAGE "$IMAGE_URI" \
-            '.containerDefinitions[0].image=$IMAGE | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)')
+            --output json | jq --arg IMAGE "$IMAGE_URI" --arg ORIGIN "$FRONTEND_ORIGIN" \
+            '.containerDefinitions[0].image=$IMAGE |
+             (.containerDefinitions[0].environment) = ((.containerDefinitions[0].environment // [] | map(select(.name != "CORS_ORIGINS"))) + [{"name":"CORS_ORIGINS","value":$ORIGIN+",http://localhost:5173"}]) |
+             del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy,.deregisteredAt)')
           TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
             --cli-input-json "$TASK_DEFINITION" \
             --query taskDefinition.taskDefinitionArn \
@@ -200,27 +210,71 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --services "$ECS_SERVICE" \
             --region ap-south-1
-      - name: Build and deploy frontend
-        if: ${{ vars.FRONTEND_BUCKET != '' && vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+      - name: Build and deploy frontend to Amplify
         env:
           VITE_GRAPHQL_HTTP_URL: ${{ vars.GRAPHQL_HTTP_URL }}
           VITE_GRAPHQL_WS_URL: ${{ vars.GRAPHQL_WS_URL }}
           VITE_COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER }}
           VITE_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
-          VITE_COGNITO_REDIRECT_URI: ${{ vars.COGNITO_REDIRECT_URI }}
-          VITE_COGNITO_LOGOUT_URI: ${{ vars.COGNITO_LOGOUT_URI }}
-          FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
-          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          AMPLIFY_APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          AMPLIFY_BRANCH: ${{ vars.AMPLIFY_BRANCH }}
         run: |
           set -euo pipefail
-          npm run build --workspace frontend
-          aws s3 sync frontend/dist/ "s3://$FRONTEND_BUCKET/" --delete \
-            --cache-control "public,max-age=31536000,immutable"
-          aws s3 cp frontend/dist/index.html "s3://$FRONTEND_BUCKET/index.html" \
-            --cache-control "public,max-age=0,must-revalidate"
-          aws cloudfront create-invalidation \
-            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-            --paths "/index.html"
-      - name: Skip frontend deployment until CloudFront is available
-        if: ${{ vars.FRONTEND_BUCKET == '' || vars.CLOUDFRONT_DISTRIBUTION_ID == '' }}
-        run: echo "Frontend deployment skipped; configure FRONTEND_BUCKET and CLOUDFRONT_DISTRIBUTION_ID after CloudFront is available."
+          AMPLIFY_DOMAIN=$(aws amplify get-app \
+            --app-id "$AMPLIFY_APP_ID" \
+            --region ap-south-1 \
+            --query 'app.defaultDomain' \
+            --output text)
+          FRONTEND_URL="https://${AMPLIFY_BRANCH}.${AMPLIFY_DOMAIN}/"
+          VITE_COGNITO_REDIRECT_URI="$FRONTEND_URL" \
+          VITE_COGNITO_LOGOUT_URI="$FRONTEND_URL" \
+            npm run build --workspace frontend
+          TMP_DIR=$(mktemp -d)
+          trap 'rm -f "$TMP_DIR/frontend.zip"; rmdir "$TMP_DIR"' EXIT
+          (cd frontend/dist && zip -qr "$TMP_DIR/frontend.zip" .)
+          DEPLOYMENT=$(aws amplify create-deployment \
+            --app-id "$AMPLIFY_APP_ID" \
+            --branch-name "$AMPLIFY_BRANCH" \
+            --region ap-south-1 \
+            --output json)
+          UPLOAD_URL=$(jq -r '.zipUploadUrl' <<< "$DEPLOYMENT")
+          JOB_ID=$(jq -r '.jobId' <<< "$DEPLOYMENT")
+          curl --fail --silent --show-error \
+            --request PUT \
+            --header 'Content-Type: application/zip' \
+            --upload-file "$TMP_DIR/frontend.zip" \
+            "$UPLOAD_URL" \
+            -o /dev/null
+          aws amplify start-deployment \
+            --app-id "$AMPLIFY_APP_ID" \
+            --branch-name "$AMPLIFY_BRANCH" \
+            --job-id "$JOB_ID" \
+            --region ap-south-1
+          for attempt in $(seq 1 90); do
+            STATUS=$(aws amplify get-job \
+              --app-id "$AMPLIFY_APP_ID" \
+              --branch-name "$AMPLIFY_BRANCH" \
+              --job-id "$JOB_ID" \
+              --region ap-south-1 \
+              --query 'job.summary.status' \
+              --output text)
+            echo "Amplify deployment status ($attempt/90): $STATUS"
+            case "$STATUS" in
+              SUCCEED)
+                exit 0
+                ;;
+              FAILED|CANCELLED)
+                aws amplify get-job \
+                  --app-id "$AMPLIFY_APP_ID" \
+                  --branch-name "$AMPLIFY_BRANCH" \
+                  --job-id "$JOB_ID" \
+                  --region ap-south-1 \
+                  --query 'job.steps[].{Name:stepName,Status:status}' \
+                  --output table
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "Amplify deployment timed out after 15 minutes." >&2
+          exit 1

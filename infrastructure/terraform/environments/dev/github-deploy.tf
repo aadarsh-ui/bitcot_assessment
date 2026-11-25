@@ -286,3 +286,33 @@ resource "aws_iam_role_policy" "github_deploy" {
   role   = aws_iam_role.github_deploy.id
   policy = data.aws_iam_policy_document.github_deploy.json
 }
+
+resource "aws_iam_role_policy" "github_amplify" {
+  count = var.enable_amplify ? 1 : 0
+
+  name = "${var.environment}-graphql-amplify-deploy"
+  role = aws_iam_role.github_deploy.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadDevAmplifyFrontendApp"
+        Effect   = "Allow"
+        Action   = ["amplify:GetApp"]
+        Resource = aws_amplify_app.frontend[0].arn
+      },
+      {
+        Sid      = "DeployDevAmplifyFrontendBranch"
+        Effect   = "Allow"
+        Action   = ["amplify:CreateDeployment", "amplify:GetBranch", "amplify:StartDeployment"]
+        Resource = aws_amplify_branch.frontend[0].arn
+      },
+      {
+        Sid      = "ReadDevAmplifyFrontendJobs"
+        Effect   = "Allow"
+        Action   = ["amplify:GetJob"]
+        Resource = "${aws_amplify_branch.frontend[0].arn}/jobs/*"
+      }
+    ]
+  })
+}
