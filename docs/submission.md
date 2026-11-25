@@ -39,5 +39,5 @@ Please find my completed DevOps assessment submission:
 
 The AWS implementation and CI/CD pipeline target the development environment. Production deployment is not configured; rollback scope and remaining limitations are documented in the repository.
 
-Regards,  
+Regards,
 Aadarsh
