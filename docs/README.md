@@ -4,7 +4,8 @@ Start here for the deployed dev architecture and submission materials.
 
 | Document | What it covers |
 |---|---|
-| [Architecture](./architecture.md) | Runtime architecture diagram, network boundaries, request flow, and CI/CD deployment sequence |
+| [Architecture](./architecture.md) | [High-resolution PNG diagram](./architecture-diagram.png), runtime boundaries, request flow, and CI/CD deployment sequence |
+| [Deployment runbook (DOCX)](./assessment-deployment-runbook.docx) | From-scratch setup, deployment, testing, security, monitoring, rollback, and teardown |
 | [Deployment and testing](./deployment.md) | Dev deployment stages, required GitHub Environment variables, Terraform steps, and smoke-test checklist |
 | [CI/CD](./ci-cd.md) | Pull-request validation, OIDC deployment gates, release sequence, and current recovery behavior |
 | [Security and IAM](./security.md) | Network exposure, identity, role boundaries, and secret handling |

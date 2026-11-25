@@ -3,8 +3,9 @@
 ## Deliverables
 
 1. **Source repository:** [aadarsh-ui/bitcot_assessment](https://github.com/aadarsh-ui/bitcot_assessment)
-2. **Architecture diagram:** [architecture.md](./architecture.md) (Mermaid diagram renders on GitHub).
+2. **Architecture diagram:** [PNG image](./architecture-diagram.png) or [architecture.md](./architecture.md) (includes the rendered PNG and Mermaid source).
 3. **Detailed documentation:**
+   - [Complete deployment runbook (DOCX)](./assessment-deployment-runbook.docx)
    - [Documentation index](./README.md)
    - [Deployment and testing](./deployment.md)
    - [CI/CD](./ci-cd.md)

@@ -4,6 +4,8 @@ This diagram describes the **development environment that is deployed and verifi
 
 ## Architecture diagram
 
+![High-resolution deployed AWS development architecture](./architecture-diagram.png)
+
 ```mermaid
 flowchart LR
   subgraph CLIENT["Client"]
