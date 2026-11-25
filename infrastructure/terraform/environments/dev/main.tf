@@ -313,6 +313,7 @@ resource "aws_db_proxy_target" "main" {
 locals {
   database_endpoint   = var.enable_rds_proxy ? aws_db_proxy.main[0].endpoint : aws_db_instance.main.address
   database_secret_arn = aws_db_instance.main.master_user_secret[0].secret_arn
+  frontend_origin     = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.frontend[0].domain_name}" : var.enable_amplify ? "https://${aws_amplify_branch.frontend[0].branch_name}.${aws_amplify_app.frontend[0].default_domain}" : "http://localhost:5173"
 }
 
 resource "aws_ecr_repository" "graphql" {
@@ -448,10 +449,7 @@ resource "aws_apigatewayv2_api" "graphql" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = var.enable_cloudfront ? [
-      "https://${aws_cloudfront_distribution.frontend[0].domain_name}",
-      "http://localhost:5173"
-    ] : ["http://localhost:5173"]
+    allow_origins = distinct([local.frontend_origin, "http://localhost:5173"])
     allow_methods = ["GET", "POST", "OPTIONS"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 300
@@ -551,7 +549,7 @@ resource "aws_ecs_task_definition" "graphql" {
       { name = "PUBLISH_TASK_EVENT_FUNCTION_NAME", value = "${var.environment}-graphql-publish-task-event" },
       { name = "JWT_ISSUER", value = var.jwt_issuer_url },
       { name = "JWT_AUDIENCE", value = var.jwt_audience },
-      { name = "CORS_ORIGINS", value = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.frontend[0].domain_name}" : "http://localhost:5173" },
+      { name = "CORS_ORIGINS", value = join(",", distinct([local.frontend_origin, "http://localhost:5173"])) },
       { name = "DATABASE_SECRET_ARN", value = local.database_secret_arn },
       { name = "DB_HOST", value = local.database_endpoint }
     ]
@@ -571,6 +569,11 @@ resource "aws_ecs_task_definition" "graphql" {
       startPeriod = 20
     }
   }])
+
+  # GitHub Actions owns deployed image revisions and runtime container configuration.
+  lifecycle {
+    ignore_changes = [container_definitions]
+  }
 }
 
 resource "aws_ecs_task_definition" "migration" {
@@ -666,6 +669,48 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
+}
+
+resource "aws_amplify_app" "frontend" {
+  count = var.enable_amplify ? 1 : 0
+
+  name                        = "${var.environment}-graphql-taskflow"
+  platform                    = "WEB"
+  enable_auto_branch_creation = false
+  enable_branch_auto_deletion = false
+  custom_headers              = <<-EOT
+    customHeaders:
+      - pattern: '/assets/*'
+        headers:
+          - key: Cache-Control
+            value: public,max-age=31536000,immutable
+      - pattern: '/index.html'
+        headers:
+          - key: Cache-Control
+            value: public,max-age=0,must-revalidate
+  EOT
+
+  custom_rule {
+    source = "</^[^.]+$/>"
+    target = "/index.html"
+    status = "200"
+  }
+
+  # Amplify normalizes YAML custom headers to JSON on read.
+  lifecycle {
+    ignore_changes = [custom_headers]
+  }
+}
+
+resource "aws_amplify_branch" "frontend" {
+  count = var.enable_amplify ? 1 : 0
+
+  app_id            = aws_amplify_app.frontend[0].id
+  branch_name       = "main"
+  description       = "Production frontend deployed by GitHub Actions"
+  framework         = "React"
+  stage             = "PRODUCTION"
+  enable_auto_build = false
 }
 
 resource "aws_cloudfront_origin_access_control" "frontend" {

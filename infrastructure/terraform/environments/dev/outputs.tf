@@ -70,6 +70,18 @@ output "cloudfront_domain" {
   value = var.enable_cloudfront ? aws_cloudfront_distribution.frontend[0].domain_name : null
 }
 
+output "amplify_app_id" {
+  value = var.enable_amplify ? aws_amplify_app.frontend[0].id : null
+}
+
+output "amplify_branch_name" {
+  value = var.enable_amplify ? aws_amplify_branch.frontend[0].branch_name : null
+}
+
+output "amplify_url" {
+  value = var.enable_amplify ? "https://${aws_amplify_branch.frontend[0].branch_name}.${aws_amplify_app.frontend[0].default_domain}" : null
+}
+
 output "sns_topic_arn" {
   value = aws_sns_topic.alerts.arn
 }

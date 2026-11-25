@@ -2,15 +2,14 @@
 
 This is the recommended **target architecture** for the original assessment PDF. It does not use an Application Load Balancer. The PDF requires cost-conscious frontend hosting, private ECS GraphQL compute, Lambda operations, private RDS, scaling, security, CI/CD, monitoring, and rollback; it does not prescribe an ALB or a specific public ingress service.
 
-> **Implementation status:** this document is a target design, not proof that AWS resources have been deployed. Terraform has been changed to define the no-ALB ingress, but the configuration still needs final validation, a reviewed AWS plan, and deployment testing. Do not claim this target is running until those checks pass.
+> **Implementation status:** this is the target architecture. The React frontend is deployed on Amplify Hosting at the default HTTPS domain; verify hosted authenticated API access. CloudFront distribution creation is blocked pending AWS account verification. Backend infrastructure is deployed, while changes in this branch still require validation, review, merge, and a GitHub deployment run.
 
 ## Architecture diagram
 
 ```mermaid
 flowchart LR
   Browser[Browser: React + Apollo Client]
-  CF[CloudFront: HTTPS, cache, SPA]
-  S3[(Private S3 bucket<br/>OAC only)]
+  Amplify[AWS Amplify Hosting<br/>HTTPS, managed CDN/cache, SPA]
   HttpApi[API Gateway HTTP API<br/>TLS + throttling]
   VpcLink[VPC Link]
   Discovery[Cloud Map service discovery]
@@ -28,8 +27,7 @@ flowchart LR
   TF[Terraform]
   ECR[ECR]
 
-  Browser -->|HTTPS| CF
-  CF -->|OAC| S3
+  Browser -->|HTTPS| Amplify
   Browser -->|HTTPS GraphQL| HttpApi
   HttpApi --> VpcLink
   VpcLink --> Discovery
@@ -54,12 +52,12 @@ flowchart LR
   OIDC --> SAM
   OIDC --> ECR
   ECR --> ECS
-  GH -->|frontend assets + invalidation| S3
+  GH -->|frontend build ZIP + deployment API| Amplify
 ```
 
 ## Request and event flow
 
-1. CloudFront serves the React bundle from a private S3 bucket using Origin Access Control. The browser never accesses the bucket directly.
+1. Amplify Hosting serves the React bundle over HTTPS from its managed CDN. GitHub Actions deploys the `main` branch using the manual deployment API; hashed assets use long-lived cache headers and `index.html` is revalidated.
 2. The browser sends GraphQL HTTP requests to the regional API Gateway HTTP API over HTTPS.
 3. API Gateway routes the request over a VPC Link to the private ECS service, discovered through Cloud Map. ECS tasks have no public IP.
 4. Apollo validates the JWT and authorization, derives the user identity from verified claims, then invokes the appropriate SAM-managed task Lambda using its task role.
