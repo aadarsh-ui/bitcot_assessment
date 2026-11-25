@@ -313,7 +313,7 @@ resource "aws_db_proxy_target" "main" {
 locals {
   database_endpoint   = var.enable_rds_proxy ? aws_db_proxy.main[0].endpoint : aws_db_instance.main.address
   database_secret_arn = aws_db_instance.main.master_user_secret[0].secret_arn
-  frontend_origin = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.frontend[0].domain_name}" : var.enable_amplify ? "https://${aws_amplify_branch.frontend[0].branch_name}.${aws_amplify_app.frontend[0].default_domain}" : "http://localhost:5173"
+  frontend_origin     = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.frontend[0].domain_name}" : var.enable_amplify ? "https://${aws_amplify_branch.frontend[0].branch_name}.${aws_amplify_app.frontend[0].default_domain}" : "http://localhost:5173"
 }
 
 resource "aws_ecr_repository" "graphql" {
@@ -678,7 +678,7 @@ resource "aws_amplify_app" "frontend" {
   platform                    = "WEB"
   enable_auto_branch_creation = false
   enable_branch_auto_deletion = false
-  custom_headers = <<-EOT
+  custom_headers              = <<-EOT
     customHeaders:
       - pattern: '/assets/*'
         headers:
