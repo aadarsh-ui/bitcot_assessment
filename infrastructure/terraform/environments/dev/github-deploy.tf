@@ -216,6 +216,12 @@ data "aws_iam_policy_document" "github_deploy" {
   }
 
   statement {
+    sid       = "CreateDevLambdaLogGroups"
+    actions   = ["logs:CreateLogGroup"]
+    resources = ["arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.environment}-graphql-*"]
+  }
+
+  statement {
     sid     = "PassEcsRoles"
     actions = ["iam:PassRole"]
     resources = [

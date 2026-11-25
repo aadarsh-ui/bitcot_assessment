@@ -189,8 +189,18 @@ jobs:
             ws-connect \
             ws-disconnect \
             ws-message; do
+            LOG_GROUP="/aws/lambda/dev-graphql-${function}"
+            if ! aws logs create-log-group \
+              --log-group-name "$LOG_GROUP" \
+              --region "$AWS_REGION" 2>"/tmp/create-log-group-error"; then
+              CREATE_ERROR=$(</tmp/create-log-group-error)
+              if [[ "$CREATE_ERROR" != *"(ResourceAlreadyExistsException)"* ]]; then
+                printf '%s\n' "$CREATE_ERROR" >&2
+                exit 1
+              fi
+            fi
             aws logs put-retention-policy \
-              --log-group-name "/aws/lambda/dev-graphql-${function}" \
+              --log-group-name "$LOG_GROUP" \
               --retention-in-days 14 \
               --region "$AWS_REGION"
           done
