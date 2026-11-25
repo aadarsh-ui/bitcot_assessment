@@ -1,6 +1,6 @@
 import type { APIGatewayProxyWebsocketEventV2, Context } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, DeleteCommand, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import {
   ApiGatewayManagementApiClient,
   DeleteConnectionCommand,
@@ -8,6 +8,7 @@ import {
 } from "@aws-sdk/client-apigatewaymanagementapi";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { executeTaskSubscription, parseTaskSubscription } from "../shared/task-subscription.js";
+import { isGoneException } from "../shared/websocket-errors.js";
 
 type ProtocolMessage = {
   id?: unknown;
@@ -32,11 +33,28 @@ function getApiClient() {
   });
 }
 
-async function post(connectionId: string, message: object) {
-  await getApiClient().send(new PostToConnectionCommand({
-    ConnectionId: connectionId,
-    Data: Buffer.from(JSON.stringify(message))
+async function removeStaleConnection(connectionId: string, requestId: string) {
+  const tableName = process.env.CONNECTIONS_TABLE;
+  if (!tableName) throw new Error("CONNECTIONS_TABLE_MISSING");
+  await db.send(new DeleteCommand({ TableName: tableName, Key: { connectionId } }));
+  console.info(JSON.stringify({
+    level: "INFO",
+    operation: "wsStaleConnection",
+    awsRequestId: requestId,
+    reason: "GONE_EXCEPTION"
   }));
+}
+
+async function post(connectionId: string, message: object, requestId: string) {
+  try {
+    await getApiClient().send(new PostToConnectionCommand({
+      ConnectionId: connectionId,
+      Data: Buffer.from(JSON.stringify(message))
+    }));
+  } catch (error) {
+    if (!isGoneException(error)) throw error;
+    await removeStaleConnection(connectionId, requestId);
+  }
 }
 
 async function close(connectionId: string, reason: string, requestId: string) {
@@ -46,7 +64,12 @@ async function close(connectionId: string, reason: string, requestId: string) {
     awsRequestId: requestId,
     reason
   }));
-  await getApiClient().send(new DeleteConnectionCommand({ ConnectionId: connectionId }));
+  try {
+    await getApiClient().send(new DeleteConnectionCommand({ ConnectionId: connectionId }));
+  } catch (error) {
+    if (!isGoneException(error)) throw error;
+    await removeStaleConnection(connectionId, requestId);
+  }
 }
 
 function operationId(value: unknown): value is string {
@@ -141,7 +164,7 @@ export async function handler(event: APIGatewayProxyWebsocketEventV2, context: C
       await close(connectionId, "UNAUTHENTICATED", context.awsRequestId);
       return { statusCode: 200, body: "Closed unauthenticated connection" };
     }
-    await post(connectionId, { type: "connection_ack" });
+    await post(connectionId, { type: "connection_ack" }, context.awsRequestId);
     return { statusCode: 200, body: "Connection initialized" };
   }
 
@@ -152,7 +175,7 @@ export async function handler(event: APIGatewayProxyWebsocketEventV2, context: C
   }
 
   if (message.type === "ping") {
-    await post(connectionId, { type: "pong", ...(message.payload === undefined ? {} : { payload: message.payload }) });
+    await post(connectionId, { type: "pong", ...(message.payload === undefined ? {} : { payload: message.payload }) }, context.awsRequestId);
   } else if (message.type === "subscribe") {
     let subscription: SubscriptionOperation;
     try {
@@ -162,7 +185,7 @@ export async function handler(event: APIGatewayProxyWebsocketEventV2, context: C
         id: operationId(message.id) ? message.id : undefined,
         type: "error",
         payload: [{ message: error instanceof Error ? error.message : "Invalid subscription" }]
-      });
+      }, context.awsRequestId);
       return { statusCode: 200, body: "Rejected invalid subscription" };
     }
     await db.send(new UpdateCommand({
