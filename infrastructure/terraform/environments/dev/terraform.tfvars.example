@@ -13,5 +13,3 @@ enable_rds_proxy = false
 # Dev defaults: one task minimum, two maximum.
 ecs_min_capacity = 1
 ecs_max_capacity = 2
-
-github_repository = "YOUR_ORG/YOUR_REPOSITORY"

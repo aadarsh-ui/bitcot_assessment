@@ -40,6 +40,18 @@ resource "aws_iam_role" "github_cloudformation" {
 
 data "aws_iam_policy_document" "github_cloudformation" {
   statement {
+    sid       = "DescribeVpcResourcesForLambdaConfiguration"
+    actions   = ["ec2:DescribeSecurityGroups", "ec2:DescribeSubnets"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "CreateSamTransformChangeSets"
+    actions   = ["cloudformation:CreateChangeSet"]
+    resources = ["arn:${data.aws_partition.current.partition}:cloudformation:${var.aws_region}:aws:transform/Serverless-2016-10-31"]
+  }
+
+  statement {
     sid = "ManageDevGraphqlLambdaFunctions"
     actions = [
       "lambda:AddPermission",
@@ -233,6 +245,7 @@ data "aws_iam_policy_document" "github_deploy" {
       "cloudformation:DescribeStacks",
       "cloudformation:ExecuteChangeSet",
       "cloudformation:GetTemplate",
+      "cloudformation:GetTemplateSummary",
       "cloudformation:ListStackResources"
     ]
     resources = [

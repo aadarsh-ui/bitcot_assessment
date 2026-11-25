@@ -71,11 +71,6 @@ variable "jwt_audience" {
   description = "Expected JWT audience for the GraphQL API"
 }
 
-variable "github_repository" {
-  type    = string
-  default = "aadarsh-ui/bitcot_assessment"
-}
-
 variable "enable_cloudfront" {
   type        = bool
   default     = false
