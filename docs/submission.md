@@ -5,6 +5,7 @@
 1. **Source repository:** [aadarsh-ui/bitcot_assessment](https://github.com/aadarsh-ui/bitcot_assessment)
 2. **Architecture diagram:** [architecture.md](./architecture.md) (Mermaid diagram renders on GitHub).
 3. **Detailed documentation:**
+   - [Documentation index](./README.md)
    - [Deployment and testing](./deployment.md)
    - [CI/CD](./ci-cd.md)
    - [Security and IAM](./security.md)

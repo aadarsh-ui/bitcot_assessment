@@ -13,7 +13,7 @@ Dev-only AWS assessment implementation for a React task-management application b
 - AWS Amplify Hosting with HTTPS and managed CDN/cache
 - CloudWatch, SNS, and GitHub OIDC
 
-See the [deployed architecture](docs/architecture.md) and [submission guide](docs/submission.md). The development deployment uses API Gateway HTTP API → VPC Link → Cloud Map → private ECS. GitHub Actions deploys to dev only; production deployment is not configured.
+Start with the [assessment documentation index](docs/README.md), [deployed architecture](docs/architecture.md), and [submission guide](docs/submission.md). The development deployment uses API Gateway HTTP API → VPC Link → Cloud Map → private ECS. GitHub Actions deploys to dev only; production deployment is not configured.
 
 Detailed guides: [deployment/testing](docs/deployment.md), [CI/CD](docs/ci-cd.md), [security/IAM](docs/security.md), [database/secrets](docs/database.md), [monitoring](docs/monitoring.md), and [rollback](docs/rollback.md).
 
